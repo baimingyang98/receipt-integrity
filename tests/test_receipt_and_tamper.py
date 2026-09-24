@@ -144,13 +144,40 @@ check("CORD 10：CASH 20,000->20,070 -> 只有校验四失败",
 v, failed, c = idr({"items": ["50.000"], "subtotal": None, "total": "50.000", "payments": []})
 check("缺小计且无付款行 -> 无法核验，而不是默认可信", v == "无法核验", f"得 {v}")
 
-# 自洽优先的投票会让一次「抹平」压过两次如实读出，reads_flagged 把这件事暴露出来
-honest = receipt.parse_reading(cord_reading(gts[3], total="11,100"))
-masked = receipt.parse_reading(cord_reading(gts[3], total="11,000", payments=["11,000"]))
-m = receipt.merge([honest, honest, masked], locale=receipt.IDR)
-v, _, _ = receipt.verdict(m, locale=receipt.IDR)
-check("投票：2 次如实 + 1 次抹平 -> 共识可信，但 reads_flagged=2 留下痕迹",
-      v == "可信" and m["reads_flagged"] == 2, f"判定={v} reads_flagged={m['reads_flagged']}")
+# 以下两例是 E3 第二轮（commit e01065b）模型的原始读数，逐字照录
+
+def reads(*payloads):
+    return [receipt.parse_reading(p, hint=".") for p in payloads]
+
+
+def both_rules(rs):
+    new = receipt.merge(rs, locale=receipt.IDR)
+    old = receipt.merge(rs, locale=receipt.IDR, rule="consistent")
+    return new, old
+
+
+# CORD 34：税额 8.500 被改成 8.700，3 次里 2 次如实读出
+base34 = {"subtotal": "85.000", "total": "93.500", "change": "6.500",
+          "payments": [{"label": "Tunai", "amount": "100.000"}]}
+new, old = both_rules(reads(dict(base34, tax="8.500"), dict(base34, tax="8.700"),
+                            dict(base34, tax="8.700")))
+check("CORD 34：2 次如实读出篡改 -> 多数规则判存疑，旧规则判可信",
+      new["verdict"] == "存疑" and new["failed"] == ["c1"] and old["verdict"] == "可信",
+      f"多数={new['verdict']}{new['failed']} 旧={old['verdict']}")
+
+# CORD 20（未篡改）：3 次都把 47,600 读成 47,400；第 1 次还把应付改成 377,659 并编出付款行
+items20 = ["64,500", "79,500", "69,500", "64,500", "47,400"]
+base20 = {"items": items20, "subtotal": "325,400", "service": "17,908", "tax": "34,351"}
+new, old = both_rules(reads(
+    dict(base20, total="377,659", payments=[{"label": "CASH", "amount": "400,000"}], change="22,341"),
+    dict(base20, total="377,859", payments=[], change=0),
+    dict(base20, total="377,859", payments=[], change=0)))
+check("CORD 20：误读被多数规则告警，应付取票面的 377,859",
+      new["verdict"] == "存疑" and new["total"] == Decimal("377859"),
+      f"判定={new['verdict']} 应付={new['total']}")
+check("CORD 20：旧规则采用编造的那次，判可信且应付为 377,659",
+      old["verdict"] == "可信" and old["total"] == Decimal("377659"),
+      f"判定={old['verdict']} 应付={old['total']}")
 
 # ---------------------------------------------------------------- 篡改模块
 

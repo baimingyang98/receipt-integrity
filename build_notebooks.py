@@ -102,14 +102,20 @@ print(f"  标注层面就不自洽：{len(both) - len(clean)} 张（{(len(both)-
     md("""## 4. E2 字段抽取准确率
 
 模型只做转写，金额在 Python 侧汇总，再与 CORD 标注逐字段比对。
-`N_EVAL` 控制规模——每张要发 `READS` 次请求，先小后大。"""),
-    code('''N_EVAL = 20      # 先跑 20 张确认流程，再放大
+
+**开发集与留出集。** 自洽票据的前 20 张在前两轮里被用来发现和修正规则（开发集）。
+规则定稿后，最终数字只在其余的票上跑一次（留出集）——这些票从未参与调规则，
+数字才算数。`EVAL_SET` 切换两者。"""),
+    code('''DEV, HOLDOUT = clean[:20], clean[20:]
+EVAL_SET = HOLDOUT
+EVAL_NAME = "留出集" if EVAL_SET is HOLDOUT else "开发集"
 READS = 3
 
 from decimal import Decimal
 import time
 
-pool = clean[:N_EVAL]
+pool = EVAL_SET
+print(f"评测集：{EVAL_NAME}，{len(pool)} 张")
 urls = [chain.pil_data_url(s["image"]) for s in pool]
 
 t0 = time.time()
@@ -158,7 +164,7 @@ print(f"未命中 {len(misses)} 项")
 for i, cid, f, got, want, _ in misses:
     if f == "识别失败":
         print(f"  #{i:2d}  CORD {cid:>3}  识别失败"); continue
-    g = clean[i]["rec"]
+    g = EVAL_SET[i]["rec"]
     print(f"  #{i:2d}  CORD {cid:>3}  {f:11s} 模型={got}  标注={want}  {why(f, got, want, g)}")
     if f == "total":
         raw = [(x.get("total"), x.get("payments"), x.get("change")) for x in e2_readings[i]]
@@ -180,10 +186,9 @@ for i, cid, f, got, want, _ in misses:
 
 只报检出率是不诚实的，两个都要。"""),
     code('''import random
-N_TAMPER = 20     # 一半改一半不改
 rng = random.Random(42)
 
-pool = clean[:N_TAMPER]
+pool = EVAL_SET     # 与 E2 同一批票，偶数号篡改、奇数号不动
 plan = []
 for i, s in enumerate(pool):
     do_tamper = (i % 2 == 0)
@@ -212,35 +217,46 @@ readings = chain.read_many(ch, urls, reads=READS)
 print(f"{len(plan)} 张 x {READS} 次，耗时 {time.time()-t0:.0f}s\\n")
 
 tp = fp = tn = fn = unk = 0
-detail = []    # (idx, CORD 编号, 是否篡改, 篡改字段, 判定, 失败项, 单次存疑次数)
+old_tp = old_fp = 0    # 旧投票规则（自洽优先）在同一批读数上的结果，只作对照
+fp_misread = 0         # 误报里，合并后的读数本身就与标注不符的张数
+detail = []    # (idx, CORD 编号, 是否篡改, 篡改字段, 判定, 失败项, 单次存疑次数, 旧规则判定)
 fld = lambda p: (p["info"] or {}).get("field", "")
 for i, p in enumerate(plan):
-    recs = [receipt.parse_reading(x, hint=".") for x in readings[i]]
-    m = receipt.merge([r for r in recs if r], locale=receipt.IDR)
+    recs = [r for r in (receipt.parse_reading(x, hint=".") for x in readings[i]) if r]
+    m = receipt.merge(recs, locale=receipt.IDR)
     if m is None:
-        v, failed, fr = "识别失败", [], "-"
+        v, failed, fr, v_old = "识别失败", [], "-", "识别失败"
     else:
-        v, failed, c = receipt.verdict(m, locale=receipt.IDR)
-        fr = f"{m['reads_flagged']}/{m['reads']}"
+        v, failed, fr = m["verdict"], m["failed"], f"{m['reads_flagged']}/{m['reads']}"
+        v_old = receipt.merge(recs, locale=receipt.IDR, rule="consistent")["verdict"]
     flagged = (v == "存疑")
     if v not in ("存疑", "可信"):
         unk += 1
     elif p["tampered"]:
-        tp += flagged; fn += not flagged
+        tp += flagged; fn += not flagged; old_tp += (v_old == "存疑")
     else:
-        fp += flagged; tn += not flagged
-    detail.append((p["idx"], p["cid"], p["tampered"], fld(p), v, failed, fr))
+        fp += flagged; tn += not flagged; old_fp += (v_old == "存疑")
+        if flagged:
+            g = EVAL_SET[i]["rec"]
+            fp_misread += any(g[f] is not None and m[f] != g[f]
+                              for f in ("subtotal", "total", "items_total"))
+    detail.append((p["idx"], p["cid"], p["tampered"], fld(p), v, failed, fr, v_old))
 
 n_t, n_c = tp + fn, fp + tn
+print(f"评测集：{EVAL_NAME}")
 print(f"被篡改 {n_t} 张：检出 {tp}，漏检 {fn}   TPR = {tp/max(n_t,1):.0%}")
 print(f"未篡改 {n_c} 张：误报 {fp}，正确 {tn}   FPR = {fp/max(n_c,1):.0%}")
+if fp:
+    print(f"  误报中 {fp_misread} 张的读数本身与标注不符——识别错误被正确告警，不是规则误判")
 if unk:
     print(f"另有 {unk} 张识别失败或无法核验，不计入上面两行")
-print("\\n逐张（单次存疑 = 各次识别单独判存疑的次数。共识判可信而这里不为 0，")
-print("说明是「自洽优先」的投票把如实读出的那几次筛掉了）：")
-for idx, cid, t, f, v, failed, fr in detail:
+print(f"对照：旧投票规则（自洽优先）在同一批读数上  "
+      f"TPR = {old_tp/max(n_t,1):.0%}   FPR = {old_fp/max(n_c,1):.0%}")
+print("\\n逐张（单次存疑 = 各次识别单独判存疑的次数，至少一半存疑即判存疑）：")
+for idx, cid, t, f, v, failed, fr, v_old in detail:
     print(f"  #{idx:3d}  CORD {cid:>3}  {'已篡改' if t else '未篡改'}  {f:26s}  "
-          f"判定={v:4s}  失败项={failed or '无'}  单次存疑={fr}")
+          f"判定={v:4s}  失败项={failed or '无'}  单次存疑={fr}"
+          + (f"  旧规则={v_old}" if v_old != v else ""))
 
 # 漏检的那几张，把逐次原始读数摆出来：模型是读错了、抹平了，还是读对了却被投票筛掉
 missed = [p for p, d in zip(plan, detail) if p["tampered"] and d[4] == "可信"]
@@ -265,12 +281,15 @@ out.mkdir(parents=True, exist_ok=True)
 
 summary = {
     "E1_总数": len(samples), "E1_两条都适用": len(both), "E1_都自洽": len(clean),
-    "E2_评测张数": len(clean[:N_EVAL]), "E2_有效识别": n_ok,
+    "评测集": EVAL_NAME,
+    "E2_评测张数": len(EVAL_SET), "E2_有效识别": n_ok,
     "E2_字段命中": {f: hit[f] for f in fields},
     "E3_篡改张数": n_t, "E3_TPR": round(tp / max(n_t, 1), 4),
     "E3_未篡改张数": n_c, "E3_FPR": round(fp / max(n_c, 1), 4),
-    "E3_无法判定": unk,
-    "READS": READS, "代码版本": ver,
+    "E3_误报中读数有误": fp_misread, "E3_无法判定": unk,
+    "E3_旧规则_TPR": round(old_tp / max(n_t, 1), 4),
+    "E3_旧规则_FPR": round(old_fp / max(n_c, 1), 4),
+    "投票规则": "多数单次判定", "READS": READS, "代码版本": ver,
 }
 (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                                   encoding="utf-8")
@@ -279,9 +298,10 @@ with (out / "e2_detail.csv").open("w", newline="", encoding="utf-8") as fh:
     w.writerows(e2_detail)
 with (out / "e3_detail.csv").open("w", newline="", encoding="utf-8") as fh:
     w = csv.writer(fh)
-    w.writerow(["idx", "cord_id", "tampered", "field", "verdict", "failed", "reads_flagged"])
+    w.writerow(["idx", "cord_id", "tampered", "field", "verdict", "failed",
+                "reads_flagged", "verdict_old_rule"])
     for r in detail:
-        w.writerow([*r[:5], "|".join(r[5]), r[6]])
+        w.writerow([*r[:5], "|".join(r[5]), r[6], r[7]])
 print(json.dumps(summary, ensure_ascii=False, indent=1))
 print("\\n已存至 /content/results/")'''),
 

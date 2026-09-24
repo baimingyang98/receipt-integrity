@@ -167,7 +167,7 @@ for i, (name, _, expect) in enumerate(targets):
     if m is None:
         print("  全部识别失败")
         continue
-    v, failed, c = receipt.verdict(m, locale=receipt.HK)
+    v, failed, c = m["verdict"], m["failed"], receipt.checks(m, locale=receipt.HK)
     print(f"  有效识别 {m['reads']}/{READS}   参与共识 {m['pool']} 次   "
           f"标签印证 {m['labels_ok']} 条")
     print(f"  小计={m['subtotal']}  应付={m['total']}  "
@@ -198,7 +198,7 @@ for i in range(7):
     if m is None:
         print(f"  receipt{i + 1}.jpg  识别失败")
         continue
-    v, failed, c = receipt.verdict(m, locale=receipt.HK)
+    v, failed, c = m["verdict"], m["failed"], receipt.checks(m, locale=receipt.HK)
     flagged += (v == "存疑")
     gap = lambda k: "   不适用" if c[f"{k}_gap"] is None else f"{c[f'{k}_gap']:+8}"
     print(f"  receipt{i + 1}.jpg  判定={v}  c1差={gap('c1')}  "

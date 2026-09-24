@@ -169,35 +169,58 @@ def verdict(rec, tol=Decimal("0.05"), locale=HK):
     return ("存疑" if failed else "可信"), failed, c
 
 
-def merge(readings, tol=Decimal("0.05"), locale=HK):
-    """跨多次识别取共识。
+FIELDS = ("subtotal", "tax", "service", "rounding", "total", "total_printed", "paid",
+          "disc_above", "disc_below", "disc_unplaced", "discount_total", "items_total",
+          "n_items", "labels_ok")
 
-    证据强弱：自洽的优先 -> 标签印证多的优先 -> 多数投票。
-    单次识别的随机误差在这里被消掉，而排序依据全部来自代码侧。
+
+def merge(readings, tol=Decimal("0.05"), locale=HK, rule="majority"):
+    """跨多次识别取共识，返回合并后的读数，判定写在 verdict / failed 两个键里。
+
+    rule="majority"（默认）：判定取各次识别单独判定的多数，至少一半判存疑即存疑；
+        各字段取票数最多的值，平票时才参考自洽与标签印证。
+    rule="consistent"：旧规则，先筛出自洽的读数再投票。它会让一次「把账做平」的读数
+        压过多次如实读出——E3 第二轮的 CORD 34（漏检）与 CORD 20（采用了编造的应付）
+        都是这样发生的。保留它只为对照。
     """
     from collections import Counter
 
     recs = [r for r in readings if r]
     if not recs:
         return None
-    pool = recs
-    for n in CHECKS:
-        keep = [r for r in pool if checks(r, tol, locale)[f"{n}_pass"] is not False]
-        pool = keep or pool
-    best = max(r["labels_ok"] for r in pool)
-    pool = [r for r in pool if r["labels_ok"] == best]
+    per = [verdict(r, tol, locale) for r in recs]
+    judged = [(v, failed) for v, failed, _ in per if v != "无法核验"]
+
+    if rule == "consistent":
+        pool = recs
+        for n in CHECKS:
+            keep = [r for r in pool if checks(r, tol, locale)[f"{n}_pass"] is not False]
+            pool = keep or pool
+        best = max(r["labels_ok"] for r in pool)
+        pool = [r for r in pool if r["labels_ok"] == best]
+    else:
+        # 所有读数都参与投票；排序只决定平票时谁优先
+        order = sorted(range(len(recs)), key=lambda i: (len(per[i][1]), -recs[i]["labels_ok"]))
+        pool = [recs[i] for i in order]
 
     out = {}
-    for f in ("subtotal", "tax", "service", "rounding", "total", "total_printed", "paid",
-              "disc_above", "disc_below", "disc_unplaced", "discount_total", "items_total"):
-        vals = [r[f] for r in pool]
-        v, n = Counter(vals).most_common(1)[0]
+    for f in FIELDS:
+        v, n = Counter(r[f] for r in pool).most_common(1)[0]
         out[f] = v if n > 1 or len(pool) == 1 else pool[0][f]
-    out["n_items"] = pool[0]["n_items"]
-    out["labels_ok"] = best
     out["reads"] = len(recs)
     out["pool"] = len(pool)
-    # 单次识别里有几次本身就判存疑——共识若是「可信」而这里不为 0，
-    # 说明是自洽优先的排序把存疑的那几次筛掉了
-    out["reads_flagged"] = sum(verdict(r, tol, locale)[0] == "存疑" for r in recs)
+    out["reads_flagged"] = sum(v == "存疑" for v, _ in judged)
+
+    if rule == "consistent":
+        out["verdict"], out["failed"], _ = verdict(out, tol, locale)
+    elif not judged:
+        out["verdict"], out["failed"] = "无法核验", []
+    elif 2 * out["reads_flagged"] >= len(judged):
+        out["verdict"] = "存疑"
+        # 失败项取多数读数都失败的那几条；各次失败的不是同一条时，列出全部
+        out["failed"] = ([n for n in CHECKS
+                          if 2 * sum(n in failed for _, failed in judged) >= len(judged)]
+                         or [n for n in CHECKS if any(n in failed for _, failed in judged)])
+    else:
+        out["verdict"], out["failed"] = "可信", []
     return out
