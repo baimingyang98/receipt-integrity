@@ -15,8 +15,11 @@ ZERO = Decimal("0.00")
 #   印尼 CORD  整单折扣印在小计之后，尚未扣过   -> discount_in_subtotal=False
 # 模型报了 above_subtotal 时以版面为准——CORD 的单品折扣就印在小计上方、已计入小计，
 # 只按地区一刀切会把它多扣一次。
-HK = {"discount_in_subtotal": True}
-IDR = {"discount_in_subtotal": False}
+#
+# tol：差额不超过它视为舍入。印尼盾取半个最小货币单位，与 cord.TOL 相同——
+# 标注侧筛自洽票据与这里判存疑必须用同一把尺子。
+HK = {"discount_in_subtotal": True, "tol": Decimal("0.05")}
+IDR = {"discount_in_subtotal": False, "tol": Decimal("0.5")}
 
 CHECKS = ("c1", "c2", "c4")
 
@@ -107,6 +110,8 @@ def parse_reading(payload, hint=None):
     payments = _amounts(pay_raw, hint)
     change = abs(parse_amount(payload.get("change"), hint) or ZERO)
     paid = sum(payments, ZERO) - change if payments else None
+    # 同一笔付款可能印两遍（CORD 58：商品下方 "CASH 100,000"，付款区又一行 "Pay: 100,000"）
+    paid_distinct = sum(set(payments), ZERO) - change if payments else None
     if sub is None and printed_total is None and paid is None:
         return None
 
@@ -124,12 +129,13 @@ def parse_reading(payload, hint=None):
         # 应付总额：票面印了就用印的；没印（港式票只有付款行）就是付款减找零
         "total": printed_total if printed_total is not None else paid,
         "total_printed": printed_total is not None,
-        "paid": paid,
+        "paid": paid, "paid_distinct": paid_distinct,
     }
 
 
-def checks(rec, tol=Decimal("0.05"), locale=HK):
+def checks(rec, tol=None, locale=HK):
     """各条校验的差额。差额为 None 表示这条校验在这张票上不适用。"""
+    tol = locale["tol"] if tol is None else tol
     if locale["discount_in_subtotal"]:
         d_in, d_out = rec["disc_above"] + rec["disc_unplaced"], rec["disc_below"]
     else:
@@ -144,10 +150,12 @@ def checks(rec, tol=Decimal("0.05"), locale=HK):
     c2 = None
     if sub is not None and rec["n_items"]:
         c2 = rec["items_total"] - d_in - sub
-    # 校验四：付款 - 找零 = 应付。票面同时印了应付总额与付款行才适用
+    # 校验四：付款 - 找零 = 应付。票面同时印了应付总额与付款行才适用。
+    # 金额相同的付款行按一笔算也能闭合时取那个差额：两笔金额恰好相同的真实分笔付款，
+    # 远少于同一笔付款在票面印两遍
     c4 = None
     if rec["total_printed"] and rec["paid"] is not None:
-        c4 = rec["paid"] - total
+        c4 = min(rec["paid"] - total, rec["paid_distinct"] - total, key=abs)
 
     def ok(gap):
         return None if gap is None else abs(gap) <= tol
@@ -156,7 +164,7 @@ def checks(rec, tol=Decimal("0.05"), locale=HK):
             "c4_gap": c4, "c4_pass": ok(c4), "labels_ok": rec["labels_ok"]}
 
 
-def verdict(rec, tol=Decimal("0.05"), locale=HK):
+def verdict(rec, tol=None, locale=HK):
     """可信 / 存疑 / 无法核验，以及失败的是哪几条。
 
     一条校验都不适用时判「无法核验」，而不是默认可信。
@@ -169,12 +177,12 @@ def verdict(rec, tol=Decimal("0.05"), locale=HK):
     return ("存疑" if failed else "可信"), failed, c
 
 
-FIELDS = ("subtotal", "tax", "service", "rounding", "total", "total_printed", "paid",
-          "disc_above", "disc_below", "disc_unplaced", "discount_total", "items_total",
-          "n_items", "labels_ok")
+FIELDS = ("subtotal", "tax", "service", "rounding", "total", "total_printed",
+          "paid", "paid_distinct", "disc_above", "disc_below", "disc_unplaced",
+          "discount_total", "items_total", "n_items", "labels_ok")
 
 
-def merge(readings, tol=Decimal("0.05"), locale=HK, rule="majority"):
+def merge(readings, tol=None, locale=HK, rule="majority"):
     """跨多次识别取共识，返回合并后的读数，判定写在 verdict / failed 两个键里。
 
     rule="majority"（默认）：判定取各次识别单独判定的多数，至少一半判存疑即存疑；

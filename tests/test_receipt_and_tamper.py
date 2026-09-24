@@ -179,6 +179,49 @@ check("CORD 20：旧规则采用编造的那次，判可信且应付为 377,659"
       old["verdict"] == "可信" and old["total"] == Decimal("377659"),
       f"判定={old['verdict']} 应付={old['total']}")
 
+# ---------------------------------------------------------------- 留出集的两张误报
+# commit 98d2b92 在留出集上 FPR 2/16，两张都不是模型读错，而是校验侧的问题
+
+check("容差：标注侧与模型侧用同一把尺子", cord.TOL == receipt.IDR["tol"],
+      f"cord={cord.TOL} IDR={receipt.IDR['tol']}")
+
+# CORD 41：票面用小数点（"47619.00"），模型照抄无误。notebook 曾强制 hint="." 把它
+# 放大 100 倍；票面本身还有 0.32 的服务费舍入尾差
+p41 = {"items": ["47619.00", "30303.00", "34632.00", "30303.00", "30303.00", "43290.00",
+                 "12987.00", "12987.00", "25974.00", "47619.00"],
+       "subtotal": "316017.00", "service": "48982.68", "total": "365000.00", "payments": []}
+r = receipt.parse_reading(p41)
+check("CORD 41：不强制千位分隔符，金额按票面解析",
+      r["subtotal"] == Decimal("316017.00") and r["items_total"] == Decimal("316017.00"),
+      f"小计={r['subtotal']}（强制 '.' 时为 {receipt.parse_reading(p41, hint='.')['subtotal']}）")
+v, failed, c = idr(p41)
+check("CORD 41：0.32 的舍入尾差不判存疑", v == "可信", f"判定={v} c1差={c['c1_gap']}")
+v, failed, c = idr(dict(p41, total="365001.00"))
+check("CORD 41：应付多出 1 盾仍判存疑", v == "存疑" and failed == ["c1"], f"c1差={c['c1_gap']}")
+v, failed, c = idr(dict(p41, total="364999.00"))
+check("容差 0.5 不吞掉 1 盾的篡改（留出集 CORD 50 即改了 1 盾）", v == "存疑",
+      f"c1差={c['c1_gap']}")
+
+# CORD 58：同一笔现金印了两遍——商品下方 "CASH 100,000"，付款区 "Pay: 100,000"
+p58 = {"items": ["55,000"], "subtotal": "55,000", "tax": "5,500", "total": "60,500",
+       "payments": [{"label": "CASH", "amount": "100,000"}, {"label": "Pay:", "amount": "100,000"}],
+       "change": "39,500"}
+v, failed, c = idr(p58)
+check("CORD 58：同一笔付款印两遍不判存疑", v == "可信", f"判定={v} c4差={c['c4_gap']}")
+v, failed, c = idr(dict(p58, change="39,000"))
+check("CORD 58：找零被改仍判存疑", v == "存疑" and failed == ["c4"], f"c4差={c['c4_gap']}")
+v, failed, c = idr(dict(p58, payments=[{"label": "CASH", "amount": "100,000"},
+                                       {"label": "Pay:", "amount": "100,500"}]))
+check("CORD 58：两行付款被改得不一致仍判存疑", v == "存疑" and failed == ["c4"],
+      f"c4差={c['c4_gap']}")
+
+# CORD 90：票面本身差 1.00，旧的标注侧容差 1 把它算作自洽放进了样本池
+g90 = {"subtotal": Decimal("100"), "total": Decimal("101"),
+       "tax": Decimal("0"), "service": Decimal("0"), "othersvc": Decimal("0"), "discount": Decimal("0")}
+check("CORD 90：差 1.00 的票不再算作标注自洽",
+      cord.check_subtotal_explains_total(g90) == Decimal("1"),
+      f"得 {cord.check_subtotal_explains_total(g90)}")
+
 # ---------------------------------------------------------------- 篡改模块
 
 print("\n篡改模块")

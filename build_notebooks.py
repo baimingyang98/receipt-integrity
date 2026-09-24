@@ -79,7 +79,10 @@ CORD-v2 的 test 划分共 100 张。先只看标注本身：两条算术校验�
     code('''import json
 from datasets import load_dataset
 
-ds = load_dataset("naver-clova-ix/cord-v2", split="test")
+# test：开发集 + 留出集，终版数字出自这里（commit 98d2b92）
+# validation：CORD 另外 100 张，从未参与任何调试，用来验证留出集之后的修正
+SPLIT = "test"
+ds = load_dataset("naver-clova-ix/cord-v2", split=SPLIT)
 samples = []
 for row in ds:
     gt = json.loads(row["ground_truth"])
@@ -107,8 +110,11 @@ print(f"  标注层面就不自洽：{len(both) - len(clean)} 张（{(len(both)-
 规则定稿后，最终数字只在其余的票上跑一次（留出集）——这些票从未参与调规则，
 数字才算数。`EVAL_SET` 切换两者。"""),
     code('''DEV, HOLDOUT = clean[:20], clean[20:]
-EVAL_SET = HOLDOUT
-EVAL_NAME = "留出集" if EVAL_SET is HOLDOUT else "开发集"
+if SPLIT == "test":
+    EVAL_SET = HOLDOUT
+    EVAL_NAME = "留出集" if EVAL_SET is HOLDOUT else "开发集"
+else:
+    EVAL_SET, EVAL_NAME = clean, f"{SPLIT}（全新）"
 READS = 3
 
 from decimal import Decimal
@@ -130,7 +136,7 @@ n_ok = 0
 e2_detail = []    # (idx, CORD 编号, 字段, 模型值, 标注值, 是否命中)
 for i, s in enumerate(pool):
     cid = s["gt"].get("meta", {}).get("image_id", "?")
-    recs = [receipt.parse_reading(p, hint=".") for p in readings[i]]
+    recs = [receipt.parse_reading(p) for p in readings[i]]
     m = receipt.merge([r for r in recs if r], locale=receipt.IDR)
     if m is None:
         e2_detail.append((i, cid, "识别失败", None, None, False)); continue
@@ -222,7 +228,7 @@ fp_misread = 0         # 误报里，合并后的读数本身就与标注不符�
 detail = []    # (idx, CORD 编号, 是否篡改, 篡改字段, 判定, 失败项, 单次存疑次数, 旧规则判定)
 fld = lambda p: (p["info"] or {}).get("field", "")
 for i, p in enumerate(plan):
-    recs = [r for r in (receipt.parse_reading(x, hint=".") for x in readings[i]) if r]
+    recs = [r for r in (receipt.parse_reading(x) for x in readings[i]) if r]
     m = receipt.merge(recs, locale=receipt.IDR)
     if m is None:
         v, failed, fr, v_old = "识别失败", [], "-", "识别失败"
@@ -281,7 +287,7 @@ out.mkdir(parents=True, exist_ok=True)
 
 summary = {
     "E1_总数": len(samples), "E1_两条都适用": len(both), "E1_都自洽": len(clean),
-    "评测集": EVAL_NAME,
+    "数据划分": SPLIT, "评测集": EVAL_NAME,
     "E2_评测张数": len(EVAL_SET), "E2_有效识别": n_ok,
     "E2_字段命中": {f: hit[f] for f in fields},
     "E3_篡改张数": n_t, "E3_TPR": round(tp / max(n_t, 1), 4),
@@ -293,6 +299,12 @@ summary = {
 }
 (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                                   encoding="utf-8")
+# 模型的原始读数一并存下：事后诊断、换规则重算都不必再发请求，也不依赖会话还开着
+raw = {"E2": {str(s["gt"]["meta"]["image_id"]): e2_readings[i] for i, s in enumerate(EVAL_SET)},
+       "E3": {str(p["cid"]): {"tampered": p["tampered"], "info": p["info"],
+                              "reads": readings[p["idx"]]} for p in plan}}
+(out / "raw_readings.json").write_text(json.dumps(raw, ensure_ascii=False, default=str),
+                                       encoding="utf-8")
 with (out / "e2_detail.csv").open("w", newline="", encoding="utf-8") as fh:
     w = csv.writer(fh); w.writerow(["idx", "cord_id", "field", "model", "gt", "match"])
     w.writerows(e2_detail)

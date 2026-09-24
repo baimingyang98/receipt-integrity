@@ -10,6 +10,11 @@ from money import parse_amount, q2
 
 ZERO = Decimal("0.00")
 
+# 差额不超过半个最小货币单位（印尼盾为 1）视为舍入，例如 CORD 41 的服务费尾差 0.32。
+# 必须与 receipt.IDR["tol"] 相同：标注侧筛"自洽票据"与模型侧判"存疑"用同一把尺子，
+# 否则标注侧放进来的票会被模型侧判不闭合（留出集的 CORD 41 误报即由此而来）。
+TOL = Decimal("0.5")
+
 
 def _as_list(node):
     """menu 可能是 dict（单品）或 list（多品），统一成 list。"""
@@ -77,7 +82,7 @@ def parse_gt(gt_parse, hint=None):
     }
 
 
-def check_items_explain_subtotal(rec, tol=Decimal("1")):
+def check_items_explain_subtotal(rec, tol=TOL):
     """校验二：商品行总额能否解释小计。"""
     if rec["subtotal"] is None or not rec["items"]:
         return None
@@ -85,7 +90,7 @@ def check_items_explain_subtotal(rec, tol=Decimal("1")):
     return gap if abs(gap) > tol else ZERO
 
 
-def check_subtotal_explains_total(rec, tol=Decimal("1")):
+def check_subtotal_explains_total(rec, tol=TOL):
     """校验一：小计加税费服务费减折扣，能否解释实付总额。"""
     if rec["subtotal"] is None or rec["total"] is None:
         return None
@@ -94,7 +99,7 @@ def check_subtotal_explains_total(rec, tol=Decimal("1")):
     return gap if abs(gap) > tol else ZERO
 
 
-def check_payment_explains_total(rec, tol=Decimal("1")):
+def check_payment_explains_total(rec, tol=TOL):
     """校验四：付款减找零能否解释应付总额。票面没标注付款行时不适用。"""
     if rec["total"] is None or not rec["payments"]:
         return None
