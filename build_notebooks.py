@@ -114,28 +114,58 @@ urls = [chain.pil_data_url(s["image"]) for s in pool]
 t0 = time.time()
 ch = chain.build_chain()
 readings = chain.read_many(ch, urls, reads=READS)
+e2_readings = readings    # E3 会覆盖 readings，这里留一份供下一格诊断
 print(f"{len(pool)} 张 x {READS} 次 = {len(pool)*READS} 次请求，耗时 {time.time()-t0:.0f}s")
 
 fields = ["subtotal", "total_paid", "items_total"]
 hit = {f: 0 for f in fields}
 n_ok = 0
-rows = []
+e2_detail = []    # (idx, CORD 编号, 字段, 模型值, 标注值, 是否命中)
 for i, s in enumerate(pool):
+    cid = s["gt"].get("meta", {}).get("image_id", "?")
     recs = [receipt.parse_reading(p, hint=".") for p in readings[i]]
     m = receipt.merge([r for r in recs if r], locale=receipt.IDR)
     if m is None:
-        rows.append((i, "识别失败", None, None)); continue
+        e2_detail.append((i, cid, "识别失败", None, None, False)); continue
     n_ok += 1
     want = {"subtotal": s["rec"]["subtotal"], "total_paid": s["rec"]["total"],
             "items_total": s["rec"]["items_total"]}
     for f in fields:
-        if want[f] is not None and m[f] == want[f]:
-            hit[f] += 1
-    rows.append((i, m["subtotal"], m["total_paid"], want["subtotal"]))
+        good = want[f] is not None and m[f] == want[f]
+        hit[f] += good
+        e2_detail.append((i, cid, f, m[f], want[f], good))
 
 print(f"\\n有效识别 {n_ok}/{len(pool)} 张")
 for f in fields:
     print(f"  {f:12s} 精确匹配 {hit[f]:3d}/{n_ok}  ({hit[f]/max(n_ok,1):.0%})")'''),
+
+    md("""### E2 未命中的逐张明细
+
+不发请求，只看上一格的结果。几类已知原因会自动标出——它们是**字段定义与 CORD 标注
+口径不一致**，不是模型读错，要和真正的误读分开计。"""),
+    code('''def why(f, got, want, g):
+    if f == "total_paid" and g["cash"] is not None and got == g["cash"]:
+        return "<- 报的是 CASH（收现金额），不是 TOTAL"
+    if f == "items_total" and g["service"] and got == want + g["service"]:
+        return "<- 服务费被算进了商品行"
+    if f == "items_total" and g["item_discount"] and got == want - g["item_discount"]:
+        return "<- 商品行报的是折后价"
+    return ""
+
+misses = [r for r in e2_detail if not r[5]]
+print(f"未命中 {len(misses)} 项")
+for i, cid, f, got, want, _ in misses:
+    if f == "识别失败":
+        print(f"  #{i:2d}  CORD {cid:>3}  识别失败"); continue
+    g = clean[i]["rec"]
+    print(f"  #{i:2d}  CORD {cid:>3}  {f:11s} 模型={got}  标注={want}  {why(f, got, want, g)}")
+    if f == "total_paid":
+        print(f"        标注 CASH={g['cash']}  CHANGE={g['change']}")
+    if f == "items_total":
+        raw = e2_readings[i][0].get("items") if e2_readings[i] else None
+        print(f"        模型 items（第 1 次）: {raw}")
+        print(f"        标注 items          : {[str(p) for p in g['items']]}"
+              f"  服务费={g['service']}  单品折扣={g['item_discount']}")'''),
 
     md("""## 5. E3 篡改检出
 
@@ -217,6 +247,9 @@ summary = {
 }
 (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                                   encoding="utf-8")
+with (out / "e2_detail.csv").open("w", newline="", encoding="utf-8") as fh:
+    w = csv.writer(fh); w.writerow(["idx", "cord_id", "field", "model", "gt", "match"])
+    w.writerows(e2_detail)
 with (out / "e3_detail.csv").open("w", newline="", encoding="utf-8") as fh:
     w = csv.writer(fh); w.writerow(["idx", "tampered", "field", "verdict", "failed"])
     for r in detail:
