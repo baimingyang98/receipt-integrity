@@ -20,9 +20,24 @@ def code(s):
             "outputs": [], "source": s.splitlines(True)}
 
 
-def writefile(name):
-    return code(f"%%writefile /content/ghb/src/{name}\n"
-                + (SRC / name).read_text(encoding="utf-8"))
+CLONE = '''import subprocess, sys
+from pathlib import Path
+
+CODE_REPO = "https://github.com/baimingyang98/receipt-integrity.git"
+CODE = Path("/content/receipt-integrity")
+if CODE.exists():
+    subprocess.run(["git", "-C", str(CODE), "pull", "-q"], check=False)
+else:
+    subprocess.run(["git", "clone", "-q", CODE_REPO, str(CODE)], check=True)
+sys.path.insert(0, str(CODE / "src"))
+
+for m in ("money", "receipt", "chain", "tamper"):
+    sys.modules.pop(m, None)
+import money, receipt, chain, tamper
+
+ver = subprocess.run(["git", "-C", str(CODE), "log", "-1", "--format=%h %s"],
+                     capture_output=True, text=True).stdout.strip()
+print("仓库版本:", ver)'''
 
 
 cells = [
@@ -38,40 +53,24 @@ E3 在 CORD 上给统计量，E4 在港式票据上给**画面**。两件 E3 做
 票据从公开仓库下载，篡改样本在本 notebook 里现场生成，不需要上传任何文件。
 """),
 
-    md("## 1. 装依赖、配 API、取数据"),
+    md("## 1. 装依赖、配 API"),
     code('''!pip install -q langchain-core langchain-deepseek
 
 import os
-import urllib.request
-from pathlib import Path
 
 try:
     from google.colab import userdata
     os.environ["DEEPSEEK_API_KEY"] = userdata.get("DEEPSEEK_API_KEY")
 except Exception as e:
     raise SystemExit(f"请先在左栏钥匙图标里加 DEEPSEEK_API_KEY：{e}")
+print("API key 已就绪")'''),
 
-REPO = "''' + REPO + '''"
-WORK = Path("/content/ghb")
-(WORK / "src").mkdir(parents=True, exist_ok=True)
-(WORK / "hk").mkdir(exist_ok=True)
+    md("""## 2. 拉取代码仓库
 
-for i in range(1, 8):
-    urllib.request.urlretrieve(f"{REPO}/receipt{i}.jpg", WORK / "hk" / f"receipt{i}.jpg")
-urllib.request.urlretrieve(f"{REPO}/ground_truth.json", WORK / "hk" / "ground_truth.json")
-print("已下载:", sorted(p.name for p in (WORK / "hk").iterdir()))'''),
-
-    md("## 2. 写入源码"),
-    writefile("money.py"),
-    writefile("receipt.py"),
-    writefile("chain.py"),
-    writefile("tamper.py"),
-    code('''import sys
-sys.path.insert(0, "/content/ghb/src")
-for m in ("money", "receipt", "chain", "tamper"):
-    sys.modules.pop(m, None)
-import money, receipt, chain, tamper
-print("源码已加载")'''),
+源码在公开仓库 [receipt-integrity](https://github.com/baimingyang98/receipt-integrity)，
+不内嵌在 notebook 里。改完代码 push 一次，重跑本格即可拿到最新版本——
+本格会打印实际拉到的 commit，实验结果可追溯到具体版本。"""),
+    code(CLONE),
 
     md("""## 3. 生成篡改样本（字形复制）
 
@@ -96,7 +95,15 @@ FARM_1    = (674, 823, 681, 843)
 FARM_8    = (695, 823, 704, 843)
 YAKULT_8  = (674, 869, 682, 889)
 
-HK = Path("/content/ghb/hk")
+import shutil
+
+# 票据随仓库一起来，不再单独下载。复制到工作目录，避免把生成物写进 clone。
+HK = Path("/content/work/hk")
+HK.mkdir(parents=True, exist_ok=True)
+for p in (CODE / "data" / "hk").glob("receipt*.jpg"):
+    shutil.copy(p, HK / p.name)
+shutil.copy(CODE / "data" / "hk" / "ground_truth.json", HK / "ground_truth.json")
+print("票据:", sorted(p.name for p in HK.glob("receipt?.jpg")))
 
 
 def make(out_name, edits, note):

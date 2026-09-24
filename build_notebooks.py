@@ -15,9 +15,24 @@ def code(s):
             "outputs": [], "source": s.splitlines(True)}
 
 
-def writefile(name):
-    return code(f"%%writefile /content/ghb/src/{name}\n"
-                + (SRC / name).read_text(encoding="utf-8"))
+CLONE = '''import subprocess, sys
+from pathlib import Path
+
+REPO = "https://github.com/baimingyang98/receipt-integrity.git"
+ROOT = Path("/content/receipt-integrity")
+if ROOT.exists():
+    subprocess.run(["git", "-C", str(ROOT), "pull", "-q"], check=False)
+else:
+    subprocess.run(["git", "clone", "-q", REPO, str(ROOT)], check=True)
+sys.path.insert(0, str(ROOT / "src"))
+
+for m in ("money", "receipt", "chain", "cord", "tamper"):
+    sys.modules.pop(m, None)
+import money, receipt, chain, cord, tamper
+
+ver = subprocess.run(["git", "-C", str(ROOT), "log", "-1", "--format=%h %s"],
+                     capture_output=True, text=True).stdout.strip()
+print("仓库版本:", ver)'''
 
 
 cells = [
@@ -48,21 +63,14 @@ try:
 except Exception as e:
     raise SystemExit(f"请先在左栏钥匙图标里加 DEEPSEEK_API_KEY：{e}")
 
-Path("/content/ghb/src").mkdir(parents=True, exist_ok=True)
 print("API key 已就绪")'''),
 
-    md("## 2. 写入源码\n\n与本地 `ghb/src/` 保持一致，改动后重跑 `build_notebooks.py` 即可同步。"),
-    writefile("money.py"),
-    writefile("receipt.py"),
-    writefile("chain.py"),
-    writefile("cord.py"),
-    writefile("tamper.py"),
-    code('''import sys
-sys.path.insert(0, "/content/ghb/src")
-for m in ("money", "receipt", "chain", "cord", "tamper"):
-    sys.modules.pop(m, None)
-import money, receipt, chain, cord, tamper
-print("源码已加载")'''),
+    md("""## 2. 拉取代码仓库
+
+源码在公开仓库 [receipt-integrity](https://github.com/baimingyang98/receipt-integrity)，
+不内嵌在 notebook 里。改完代码 push 一次，重跑本格即可拿到最新版本——
+本格会打印实际拉到的 commit，实验结果可追溯到具体版本。"""),
+    code(CLONE),
 
     md("""## 3. 载入 CORD 并做 E1
 
