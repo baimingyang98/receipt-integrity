@@ -55,6 +55,11 @@ def parse_gt(gt_parse, hint=None):
         if d is not None:
             item_discounts.append(abs(d))
 
+    # 付款行：现金、刷卡、电子钱包；total_etc 在 CORD 里是代金券等其他付款方式
+    payments = [parse_amount(_scalar(tot.get(k)), hint)
+                for k in ("cashprice", "creditcardprice", "emoneyprice", "total_etc")]
+    payments = [p for p in payments if p is not None]
+
     return {
         "items": item_prices,
         "items_total": _sum(item_prices),
@@ -67,6 +72,7 @@ def parse_gt(gt_parse, hint=None):
         "total": parse_amount(_scalar(tot.get("total_price")), hint),
         "cash": parse_amount(_scalar(tot.get("cashprice")), hint),
         "change": parse_amount(_scalar(tot.get("changeprice")), hint),
+        "payments": payments,
         "n_items": len(item_prices),
     }
 
@@ -85,6 +91,14 @@ def check_subtotal_explains_total(rec, tol=Decimal("1")):
         return None
     expect = rec["subtotal"] + rec["tax"] + rec["service"] + rec["othersvc"] - rec["discount"]
     gap = rec["total"] - expect
+    return gap if abs(gap) > tol else ZERO
+
+
+def check_payment_explains_total(rec, tol=Decimal("1")):
+    """校验四：付款减找零能否解释应付总额。票面没标注付款行时不适用。"""
+    if rec["total"] is None or not rec["payments"]:
+        return None
+    gap = _sum(rec["payments"]) - (rec["change"] or ZERO) - rec["total"]
     return gap if abs(gap) > tol else ZERO
 
 

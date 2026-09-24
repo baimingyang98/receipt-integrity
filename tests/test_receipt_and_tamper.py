@@ -46,8 +46,8 @@ def idr_reading(**over):
 print("校验层")
 r = receipt.parse_reading(hk_reading())
 check("港式：小计与实付解析正确",
-      r["subtotal"] == Decimal("316.11") and r["total_paid"] == Decimal("316.10"),
-      f"小计={r['subtotal']} 实付={r['total_paid']}")
+      r["subtotal"] == Decimal("316.11") and r["total"] == Decimal("316.10"),
+      f"小计={r['subtotal']} 应付={r['total']}")
 check("港式：折扣合计 76.09", r["discount_total"] == Decimal("76.09"),
       f"得 {r['discount_total']}")
 check("港式：标签印证 7 条（5% OFF 那条印证不了）", r["labels_ok"] == 7,
@@ -82,6 +82,75 @@ good = receipt.parse_reading(hk_reading())
 m = receipt.merge([bad, good, good])
 check("投票：少数错读被多数盖过", m["discount_total"] == Decimal("76.09"),
       f"得 {m['discount_total']}，reads={m['reads']} pool={m['pool']}")
+
+# ---------------------------------------------------------------- CORD 回归
+# 以下几例都来自 E3 第一轮（commit 2fbf8ae）的实测结果。
+
+import json  # noqa: E402
+import cord  # noqa: E402
+
+fixture = json.loads((ROOT / "tests" / "fixtures" / "cord_test_34.json").read_text(encoding="utf-8"))
+gts = {x["meta"]["image_id"]: cord.parse_gt(x["gt_parse"]) for x in fixture}
+
+
+def cord_reading(g, **over):
+    """按 CORD 标注构造一次逐字无误的转写。单品折扣印在小计上方，整单折扣印在下方。"""
+    disc = []
+    if g["item_discount"]:
+        disc.append({"label": "DISC", "amount": str(g["item_discount"]), "above_subtotal": True})
+    if g["discount"]:
+        disc.append({"label": "DISC", "amount": str(g["discount"]), "above_subtotal": False})
+    d = {"items": [str(p) for p in g["items"]], "discounts": disc,
+         "subtotal": str(g["subtotal"]), "tax": str(g["tax"]),
+         "service": str(g["service"] + g["othersvc"]), "rounding": 0,
+         "total": str(g["total"]), "payments": [str(p) for p in g["payments"]],
+         "change": str(g["change"] or 0)}
+    d.update(over)
+    return d
+
+
+def idr(payload):
+    return receipt.verdict(receipt.parse_reading(payload), locale=receipt.IDR)
+
+
+clean = [i for i, g in gts.items()
+         if cord.check_subtotal_explains_total(g) == 0
+         and cord.check_items_explain_subtotal(g) == 0
+         and cord.check_payment_explains_total(g) in (None, 0)]
+flagged = [i for i in clean if idr(cord_reading(gts[i]))[0] != "可信"]
+check(f"CORD：{len(clean)} 张自洽标注逐字转写，无一误报", not flagged, f"误报 {flagged}")
+
+# 第一轮 FPR 20% 的来源：单品折扣已计入小计，却被当成整单折扣又扣一次
+unplaced = []
+for i in clean:
+    p = cord_reading(gts[i])
+    p["discounts"] = [{k: v for k, v in e.items() if k != "above_subtotal"} for e in p["discounts"]]
+    if idr(p)[0] == "存疑":
+        unplaced.append(i)
+check("CORD：不报折扣位置时，恰是 31、33 两张被误报", unplaced == [31, 33], f"得 {unplaced}")
+
+# 第一轮漏检：TOTAL 被改，但下方 CASH 行仍印原值
+v, failed, c = idr(cord_reading(gts[3], total="11,100"))
+check("CORD 3：TOTAL 11,000->11,100 照实读出 -> 校验一、四失败",
+      v == "存疑" and failed == ["c1", "c4"], f"失败项={failed}")
+v, failed, c = idr(cord_reading(gts[5], total="32.000"))
+check("CORD 5：TOTAL 31.000->32.000 照实读出 -> 校验一、四失败",
+      v == "存疑" and failed == ["c1", "c4"], f"失败项={failed}")
+# 第一轮漏检：CASH 被改，旧校验里没有任何一条覆盖付款行
+v, failed, c = idr(cord_reading(gts[10], payments=["20,070"]))
+check("CORD 10：CASH 20,000->20,070 -> 只有校验四失败",
+      v == "存疑" and failed == ["c4"], f"失败项={failed} c4差={c['c4_gap']}")
+
+v, failed, c = idr({"items": ["50.000"], "subtotal": None, "total": "50.000", "payments": []})
+check("缺小计且无付款行 -> 无法核验，而不是默认可信", v == "无法核验", f"得 {v}")
+
+# 自洽优先的投票会让一次「抹平」压过两次如实读出，reads_flagged 把这件事暴露出来
+honest = receipt.parse_reading(cord_reading(gts[3], total="11,100"))
+masked = receipt.parse_reading(cord_reading(gts[3], total="11,000", payments=["11,000"]))
+m = receipt.merge([honest, honest, masked], locale=receipt.IDR)
+v, _, _ = receipt.verdict(m, locale=receipt.IDR)
+check("投票：2 次如实 + 1 次抹平 -> 共识可信，但 reads_flagged=2 留下痕迹",
+      v == "可信" and m["reads_flagged"] == 2, f"判定={v} reads_flagged={m['reads_flagged']}")
 
 # ---------------------------------------------------------------- 篡改模块
 

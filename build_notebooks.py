@@ -86,16 +86,17 @@ for row in ds:
     rec = cord.parse_gt(gt["gt_parse"])
     samples.append({"image": row["image"], "gt": gt, "rec": rec,
                     "c1": cord.check_subtotal_explains_total(rec),
-                    "c2": cord.check_items_explain_subtotal(rec)})
+                    "c2": cord.check_items_explain_subtotal(rec),
+                    "c4": cord.check_payment_explains_total(rec)})
 
+# 校验四（付款-找零=应付）只在印了付款行的票上适用，不作为入选门槛，但适用时必须自洽
 both = [s for s in samples if s["c1"] is not None and s["c2"] is not None]
-clean = [s for s in both if s["c1"] == 0 and s["c2"] == 0]
+clean = [s for s in both if s["c1"] == 0 and s["c2"] == 0 and s["c4"] in (None, 0)]
 print(f"总计 {len(samples)} 张")
-print(f"  校验一适用 {sum(s['c1'] is not None for s in samples)} 张，"
-      f"自洽 {sum(s['c1'] == 0 for s in samples if s['c1'] is not None)} 张")
-print(f"  校验二适用 {sum(s['c2'] is not None for s in samples)} 张，"
-      f"自洽 {sum(s['c2'] == 0 for s in samples if s['c2'] is not None)} 张")
-print(f"  两条都适用 {len(both)} 张，都自洽 {len(clean)} 张  <- 可用于篡改实验")
+for k, name in (("c1", "校验一"), ("c2", "校验二"), ("c4", "校验四")):
+    app = [s for s in samples if s[k] is not None]
+    print(f"  {name}适用 {len(app)} 张，自洽 {sum(s[k] == 0 for s in app)} 张")
+print(f"  一、二都适用 {len(both)} 张，全部自洽 {len(clean)} 张  <- 可用于篡改实验")
 print(f"  标注层面就不自洽：{len(both) - len(clean)} 张（{(len(both)-len(clean))/max(len(both),1):.0%}）")'''),
 
     md("""## 4. E2 字段抽取准确率
@@ -117,7 +118,7 @@ readings = chain.read_many(ch, urls, reads=READS)
 e2_readings = readings    # E3 会覆盖 readings，这里留一份供下一格诊断
 print(f"{len(pool)} 张 x {READS} 次 = {len(pool)*READS} 次请求，耗时 {time.time()-t0:.0f}s")
 
-fields = ["subtotal", "total_paid", "items_total"]
+fields = ["subtotal", "total", "items_total"]
 hit = {f: 0 for f in fields}
 n_ok = 0
 e2_detail = []    # (idx, CORD 编号, 字段, 模型值, 标注值, 是否命中)
@@ -128,7 +129,7 @@ for i, s in enumerate(pool):
     if m is None:
         e2_detail.append((i, cid, "识别失败", None, None, False)); continue
     n_ok += 1
-    want = {"subtotal": s["rec"]["subtotal"], "total_paid": s["rec"]["total"],
+    want = {"subtotal": s["rec"]["subtotal"], "total": s["rec"]["total"],
             "items_total": s["rec"]["items_total"]}
     for f in fields:
         good = want[f] is not None and m[f] == want[f]
@@ -144,7 +145,7 @@ for f in fields:
 不发请求，只看上一格的结果。几类已知原因会自动标出——它们是**字段定义与 CORD 标注
 口径不一致**，不是模型读错，要和真正的误读分开计。"""),
     code('''def why(f, got, want, g):
-    if f == "total_paid" and g["cash"] is not None and got == g["cash"]:
+    if f == "total" and g["cash"] is not None and got == g["cash"]:
         return "<- 报的是 CASH（收现金额），不是 TOTAL"
     if f == "items_total" and g["service"] and got == want + g["service"]:
         return "<- 服务费被算进了商品行"
@@ -159,7 +160,9 @@ for i, cid, f, got, want, _ in misses:
         print(f"  #{i:2d}  CORD {cid:>3}  识别失败"); continue
     g = clean[i]["rec"]
     print(f"  #{i:2d}  CORD {cid:>3}  {f:11s} 模型={got}  标注={want}  {why(f, got, want, g)}")
-    if f == "total_paid":
+    if f == "total":
+        raw = [(x.get("total"), x.get("payments"), x.get("change")) for x in e2_readings[i]]
+        print(f"        模型 (total, payments, change)，逐次: {raw}")
         print(f"        标注 CASH={g['cash']}  CHANGE={g['change']}")
     if f == "items_total":
         raw = e2_readings[i][0].get("items") if e2_readings[i] else None
@@ -194,7 +197,8 @@ for i, s in enumerate(pool):
             if info:
                 img = img2
                 break
-    plan.append({"idx": i, "tampered": bool(info), "image": img, "info": info})
+    plan.append({"idx": i, "cid": s["gt"].get("meta", {}).get("image_id", "?"),
+                 "tampered": bool(info), "image": img, "info": info})
 
 made = sum(p["tampered"] for p in plan)
 print(f"{len(plan)} 张里成功篡改 {made} 张，未改 {len(plan)-made} 张")
@@ -207,28 +211,50 @@ t0 = time.time()
 readings = chain.read_many(ch, urls, reads=READS)
 print(f"{len(plan)} 张 x {READS} 次，耗时 {time.time()-t0:.0f}s\\n")
 
-tp = fp = tn = fn = 0
-detail = []
+tp = fp = tn = fn = unk = 0
+detail = []    # (idx, CORD 编号, 是否篡改, 篡改字段, 判定, 失败项, 单次存疑次数)
 fld = lambda p: (p["info"] or {}).get("field", "")
 for i, p in enumerate(plan):
     recs = [receipt.parse_reading(x, hint=".") for x in readings[i]]
     m = receipt.merge([r for r in recs if r], locale=receipt.IDR)
     if m is None:
-        detail.append((p["idx"], p["tampered"], fld(p), "识别失败", [])); continue
-    v, failed, c = receipt.verdict(m, locale=receipt.IDR)
+        v, failed, fr = "识别失败", [], "-"
+    else:
+        v, failed, c = receipt.verdict(m, locale=receipt.IDR)
+        fr = f"{m['reads_flagged']}/{m['reads']}"
     flagged = (v == "存疑")
-    if p["tampered"]:
+    if v not in ("存疑", "可信"):
+        unk += 1
+    elif p["tampered"]:
         tp += flagged; fn += not flagged
     else:
         fp += flagged; tn += not flagged
-    detail.append((p["idx"], p["tampered"], fld(p), v, failed))
+    detail.append((p["idx"], p["cid"], p["tampered"], fld(p), v, failed, fr))
 
 n_t, n_c = tp + fn, fp + tn
 print(f"被篡改 {n_t} 张：检出 {tp}，漏检 {fn}   TPR = {tp/max(n_t,1):.0%}")
 print(f"未篡改 {n_c} 张：误报 {fp}，正确 {tn}   FPR = {fp/max(n_c,1):.0%}")
-print("\\n逐张：")
-for idx, t, f, v, failed in detail:
-    print(f"  #{idx:3d}  {'已篡改' if t else '未篡改'}  {f:26s}  判定={v:4s}  失败项={failed or '无'}")'''),
+if unk:
+    print(f"另有 {unk} 张识别失败或无法核验，不计入上面两行")
+print("\\n逐张（单次存疑 = 各次识别单独判存疑的次数。共识判可信而这里不为 0，")
+print("说明是「自洽优先」的投票把如实读出的那几次筛掉了）：")
+for idx, cid, t, f, v, failed, fr in detail:
+    print(f"  #{idx:3d}  CORD {cid:>3}  {'已篡改' if t else '未篡改'}  {f:26s}  "
+          f"判定={v:4s}  失败项={failed or '无'}  单次存疑={fr}")
+
+# 漏检的那几张，把逐次原始读数摆出来：模型是读错了、抹平了，还是读对了却被投票筛掉
+missed = [p for p, d in zip(plan, detail) if p["tampered"] and d[4] == "可信"]
+if missed:
+    print("\\n漏检的逐次原始读数（票面实际印的是改后的值）：")
+for p in missed:
+    info = p["info"]
+    print(f"  #{p['idx']}  CORD {p['cid']}  {info['field']}  {info['old']} -> {info['new']}")
+    for x in readings[p["idx"]]:
+        if info["field"].startswith("menu"):
+            print(f"      items={x.get('items')}  subtotal={x.get('subtotal')}")
+        else:
+            print(f"      subtotal={x.get('subtotal')}  total={x.get('total')}  "
+                  f"payments={x.get('payments')}  change={x.get('change')}")'''),
 
     md("""## 6. 存结果
 
@@ -243,7 +269,8 @@ summary = {
     "E2_字段命中": {f: hit[f] for f in fields},
     "E3_篡改张数": n_t, "E3_TPR": round(tp / max(n_t, 1), 4),
     "E3_未篡改张数": n_c, "E3_FPR": round(fp / max(n_c, 1), 4),
-    "READS": READS,
+    "E3_无法判定": unk,
+    "READS": READS, "代码版本": ver,
 }
 (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                                   encoding="utf-8")
@@ -251,9 +278,10 @@ with (out / "e2_detail.csv").open("w", newline="", encoding="utf-8") as fh:
     w = csv.writer(fh); w.writerow(["idx", "cord_id", "field", "model", "gt", "match"])
     w.writerows(e2_detail)
 with (out / "e3_detail.csv").open("w", newline="", encoding="utf-8") as fh:
-    w = csv.writer(fh); w.writerow(["idx", "tampered", "field", "verdict", "failed"])
+    w = csv.writer(fh)
+    w.writerow(["idx", "cord_id", "tampered", "field", "verdict", "failed", "reads_flagged"])
     for r in detail:
-        w.writerow([r[0], r[1], r[2], r[3], "|".join(r[4])])
+        w.writerow([*r[:5], "|".join(r[5]), r[6]])
 print(json.dumps(summary, ensure_ascii=False, indent=1))
 print("\\n已存至 /content/results/")'''),
 

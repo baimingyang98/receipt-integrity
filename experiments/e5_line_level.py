@@ -75,8 +75,9 @@ for tag, (fname, desc, expect) in CASES.items():
                 continue
             if cond.startswith("C"):
                 got.append(str(out.get("amount")))
-            elif tag == "T1":
-                got.append(str(out.get("total_paid")))
+            elif tag == "T1":   # 港式票没有 TOTAL 行，OCTOPUS 在付款行里
+                pays = out.get("payments") or [out.get("total_paid")]
+                got.append(str([p.get("amount") if isinstance(p, dict) else p for p in pays]))
             else:
                 got.append(f"{item_sum(out)}(含98.80={'98.8' in str(out.get('items'))})")
         hit = any(expect.rstrip("0").rstrip(".") in g.replace(",", "") for g in got)

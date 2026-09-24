@@ -16,25 +16,29 @@ CONCURRENCY = int(os.environ.get("RECEIPT_CONCURRENCY", 5))
 SYSTEM_PROMPT = """你在转写一张零售票据。照抄票面上印的内容，不要做任何计算。
 
 按 JSON 输出这些字段：
-- "items"：每一行会让账单变大的金额——商品行、包装费、押金、服务费行——一行一条，正数，按票面顺序。
+- "items"：商品行，一个商品一条，取该行金额栏的数字（行金额，不是单价），正数，按票面顺序。
+  单独成行的包装费、押金也算。服务费和税不算，它们有自己的字段。
 - "discounts"：每一行会让账单变小的金额——折扣、促销、优惠券、"% OFF"、"MEMBER PRICE"、"SAVE"、"REDEEM" 等。
-  每条写成 {{"label": 该行印的文字, "amount": 金额栏的数字取正}}。舍入行不算折扣。
-  折扣常印在它所属商品的下一行，标签形如 "Buy 2 Save $6"、"MB APP UPGRADE -$10"、"5% OFF"。
+  每条写成 {{"label": 该行印的文字, "amount": 金额栏的数字取正, "above_subtotal": 该行印在小计行上方为 true，下方为 false}}。
+  舍入行不算折扣。折扣常印在它所属商品的下一行，标签形如 "Buy 2 Save $6"、"MB APP UPGRADE -$10"、"5% OFF"。
   label 逐字照抄，amount 取金额栏。
-- "subtotal"：SUBTOTAL / 小计 行，照原样。
+- "subtotal"：SUBTOTAL / 小计 行，照原样；票面没有这一行填 null。
 - "tax"：税额行（TAX、PB1、VAT、GST 等），没有则填 0。
 - "service"：服务费行（SERVICE、SVC 等），没有则填 0。
 - "rounding"：舍入 / 调整行，保留正负号，没有则填 0。
-- "total_paid"：实付行（TOTAL、CASH、OCTOPUS、VISA、CREDIT CARD、应付金额等），照原样。
+- "total"：应付总额行（TOTAL、GRAND TOTAL、合计、应付金额等），照原样；票面没有这一行填 null。
+- "payments"：付款行，每种付款方式一条 {{"label": 该行文字, "amount": 金额栏的数字}}——
+  CASH、OCTOPUS、VISA、CREDIT CARD、DEBIT、VOUCHER 等。没有则为空列表。
+- "change"：找零行（CHANGE、找续），没有则填 0。
 
 规则：
 - 只转写。不要加、减、核对或调平任何总额。
 - 不要为了让账单对得上而改动任何数字。票面数字若看起来对不上，也照原样报。
-- 一行一条，不合并、不编造、不遗漏。
+- 一行一条，不合并、不编造、不遗漏。应付总额与付款行即使数字相同，也各报各的。
 - **数字连同千位分隔符和小数点一起照抄**。票面写 "60.000" 就写 "60.000"，
   写 "28,000" 就写 "28,000"，不要替你换算或改写格式。
 - 只回一个 JSON 对象，不要别的内容：
-{{"items": [], "discounts": [{{"label": "", "amount": 0}}], "subtotal": 0, "tax": 0, "service": 0, "rounding": 0, "total_paid": 0}}
+{{"items": [], "discounts": [{{"label": "", "amount": 0, "above_subtotal": true}}], "subtotal": 0, "tax": 0, "service": 0, "rounding": 0, "total": 0, "payments": [{{"label": "", "amount": 0}}], "change": 0}}
 """
 
 INSTRUCTION = "照抄这张票据的各行金额与合计，按字段定义输出 JSON。"

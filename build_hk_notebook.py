@@ -170,13 +170,15 @@ for i, (name, _, expect) in enumerate(targets):
     v, failed, c = receipt.verdict(m, locale=receipt.HK)
     print(f"  有效识别 {m['reads']}/{READS}   参与共识 {m['pool']} 次   "
           f"标签印证 {m['labels_ok']} 条")
-    print(f"  小计={m['subtotal']}  实付={m['total_paid']}  "
+    print(f"  小计={m['subtotal']}  应付={m['total']}  "
           f"折扣={m['discount_total']}  商品行={m['items_total']}")
-    print(f"  校验一 付款行闭合      差 {c['c1_gap']:+}   "
-          f"{'通过' if c['c1_pass'] else '不通过'}")
-    print(f"  校验二 商品行解释小计  差 {c['c2_gap']:+}   "
-          f"{'通过' if c['c2_pass'] else '不通过'}")
-    print(f"  判定：{v}" + (f"（失败项 {failed}）" if failed else ""))
+    for k, name in (("c1", "校验一 应付闭合      "), ("c2", "校验二 商品行解释小计"),
+                    ("c4", "校验四 付款解释应付  ")):
+        gap = c[f"{k}_gap"]
+        print(f"  {name}  " + ("不适用（票面没印应付总额行）" if gap is None else
+                               f"差 {gap:+}   {'通过' if c[f'{k}_pass'] else '不通过'}"))
+    print(f"  判定：{v}" + (f"（失败项 {failed}）" if failed else "")
+          + f"   单次存疑 {m['reads_flagged']}/{m['reads']}")
     print(f"  预期：{expect}")'''),
 
     md("""## 6. 未篡改的 7 张 —— 港式票据上的误报基线
@@ -198,8 +200,9 @@ for i in range(7):
         continue
     v, failed, c = receipt.verdict(m, locale=receipt.HK)
     flagged += (v == "存疑")
-    print(f"  receipt{i + 1}.jpg  判定={v}  c1差={c['c1_gap']:+8}  "
-          f"c2差={c['c2_gap']:+8}  标签印证={m['labels_ok']}  "
+    gap = lambda k: "   不适用" if c[f"{k}_gap"] is None else f"{c[f'{k}_gap']:+8}"
+    print(f"  receipt{i + 1}.jpg  判定={v}  c1差={gap('c1')}  "
+          f"c2差={gap('c2')}  标签印证={m['labels_ok']}  "
           f"有效识别={m['reads']}/{READS}")
 print()
 print(f"误报 {flagged}/7   FPR = {flagged / 7:.0%}")'''),
