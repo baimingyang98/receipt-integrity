@@ -1,0 +1,51 @@
+{
+  "currency": "HKD",
+  "answers": {
+    "How much money did I spend in total for these bills?": 1974.30,
+    "How much would I have had to pay without the discount?": 2348.20
+  },
+  "receipts": {
+    "receipt1.jpg": {
+      "amount_paid_after_rounding": 394.70,
+      "subtotal_after_discounts_before_rounding": 394.72,
+      "discount_total": 85.48,
+      "amount_without_discounts": 480.20
+    },
+    "receipt2.jpg": {
+      "amount_paid_after_rounding": 316.10,
+      "subtotal_after_discounts_before_rounding": 316.11,
+      "discount_total": 76.09,
+      "amount_without_discounts": 392.20
+    },
+    "receipt3.jpg": {
+      "amount_paid_after_rounding": 140.80,
+      "subtotal_after_discounts_before_rounding": 140.88,
+      "discount_total": 19.22,
+      "amount_without_discounts": 160.10
+    },
+    "receipt4.jpg": {
+      "amount_paid_after_rounding": 514.00,
+      "subtotal_after_discounts_before_rounding": 514.09,
+      "discount_total": 76.71,
+      "amount_without_discounts": 590.80
+    },
+    "receipt5.jpg": {
+      "amount_paid_after_rounding": 102.30,
+      "subtotal_after_discounts_before_rounding": 102.31,
+      "discount_total": 5.39,
+      "amount_without_discounts": 107.70
+    },
+    "receipt6.jpg": {
+      "amount_paid_after_rounding": 190.80,
+      "subtotal_after_discounts_before_rounding": 190.89,
+      "discount_total": 30.31,
+      "amount_without_discounts": 221.20
+    },
+    "receipt7.jpg": {
+      "amount_paid_after_rounding": 315.60,
+      "subtotal_after_discounts_before_rounding": 315.64,
+      "discount_total": 80.36,
+      "amount_without_discounts": 396.00
+    }
+  }
+}

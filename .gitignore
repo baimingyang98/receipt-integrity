@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+.ipynb_checkpoints/
+results/
+data/hk/_*.jpg
+data/hk/_*.png
