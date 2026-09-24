@@ -179,32 +179,33 @@ print(f"{len(plan)} 张 x {READS} 次，耗时 {time.time()-t0:.0f}s\\n")
 
 tp = fp = tn = fn = 0
 detail = []
+fld = lambda p: (p["info"] or {}).get("field", "")
 for i, p in enumerate(plan):
     recs = [receipt.parse_reading(x, hint=".") for x in readings[i]]
     m = receipt.merge([r for r in recs if r], locale=receipt.IDR)
     if m is None:
-        detail.append((p["idx"], p["tampered"], "识别失败", [])); continue
+        detail.append((p["idx"], p["tampered"], fld(p), "识别失败", [])); continue
     v, failed, c = receipt.verdict(m, locale=receipt.IDR)
     flagged = (v == "存疑")
     if p["tampered"]:
         tp += flagged; fn += not flagged
     else:
         fp += flagged; tn += not flagged
-    detail.append((p["idx"], p["tampered"], v, failed))
+    detail.append((p["idx"], p["tampered"], fld(p), v, failed))
 
 n_t, n_c = tp + fn, fp + tn
 print(f"被篡改 {n_t} 张：检出 {tp}，漏检 {fn}   TPR = {tp/max(n_t,1):.0%}")
 print(f"未篡改 {n_c} 张：误报 {fp}，正确 {tn}   FPR = {fp/max(n_c,1):.0%}")
 print("\\n逐张：")
-for idx, t, v, failed in detail:
-    print(f"  #{idx:3d}  {'已篡改' if t else '未篡改'}  判定={v:4s}  失败项={failed or '无'}")'''),
+for idx, t, f, v, failed in detail:
+    print(f"  #{idx:3d}  {'已篡改' if t else '未篡改'}  {f:26s}  判定={v:4s}  失败项={failed or '无'}")'''),
 
     md("""## 6. 存结果
 
 把三个实验的数字落盘，PPT 直接引用，不要凭记忆重打。"""),
     code('''import csv, json
-out = Path("/content/ghb/results")
-out.mkdir(exist_ok=True)
+out = Path("/content/results")
+out.mkdir(parents=True, exist_ok=True)
 
 summary = {
     "E1_总数": len(samples), "E1_两条都适用": len(both), "E1_都自洽": len(clean),
@@ -217,11 +218,11 @@ summary = {
 (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                                   encoding="utf-8")
 with (out / "e3_detail.csv").open("w", newline="", encoding="utf-8") as fh:
-    w = csv.writer(fh); w.writerow(["idx", "tampered", "verdict", "failed"])
+    w = csv.writer(fh); w.writerow(["idx", "tampered", "field", "verdict", "failed"])
     for r in detail:
-        w.writerow([r[0], r[1], r[2], "|".join(r[3])])
+        w.writerow([r[0], r[1], r[2], r[3], "|".join(r[4])])
 print(json.dumps(summary, ensure_ascii=False, indent=1))
-print("\\n已存至 /content/ghb/results/")'''),
+print("\\n已存至 /content/results/")'''),
 
     md("""## 怎么用这些数字
 
