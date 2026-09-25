@@ -26,9 +26,9 @@ else:
     subprocess.run(["git", "clone", "-q", REPO, str(ROOT)], check=True)
 sys.path.insert(0, str(ROOT / "src"))
 
-for m in ("money", "receipt", "chain", "cord", "tamper"):
+for m in ("money", "receipt", "chain", "cord", "tamper", "baseline"):
     sys.modules.pop(m, None)
-import money, receipt, chain, cord, tamper
+import money, receipt, chain, cord, tamper, baseline
 
 ver = subprocess.run(["git", "-C", str(ROOT), "log", "-1", "--format=%h %s"],
                      capture_output=True, text=True).stdout.strip()
@@ -40,13 +40,12 @@ cells = [
 
 工行杯 · 金融安全服务方向
 
-三个实验：
-
 | | 测什么 | 指标 |
 |---|---|---|
 | E1 | 公开票据本身有多少是自洽的 | 误报基线 |
 | E2 | 模型读出的字段与标注是否一致 | 各字段精确匹配率 |
-| E3 | 被篡改的票据能否被发现 | TPR / FPR |
+| E3 | 被篡改的票据能否被发现 | TPR（检出率）/ FPR（误报率） |
+| 对照组 | 不用校验层、直接让模型判断，能否做到同样的事 | 同上 |
 
 **运行环境**：Colab CPU 即可。模型在服务端，GPU 用不上。
 需要 Colab Secrets 里有 `DEEPSEEK_API_KEY`。
@@ -81,7 +80,7 @@ from datasets import load_dataset
 
 # test：开发集 + 留出集，终版数字出自这里（commit 98d2b92）
 # validation：CORD 另外 100 张，从未参与任何调试，用来验证留出集之后的修正
-SPLIT = "test"
+SPLIT = "validation"
 ds = load_dataset("naver-clova-ix/cord-v2", split=SPLIT)
 samples = []
 for row in ds:
@@ -278,7 +277,71 @@ for p in missed:
             print(f"      subtotal={x.get('subtotal')}  total={x.get('total')}  "
                   f"payments={x.get('payments')}  change={x.get('change')}")'''),
 
-    md("""## 6. 存结果
+    md("""## 6. 对照组：不用校验层，直接让模型判断
+
+同一批图片（E3 的篡改 + 未篡改）、同一个模型、同样读 3 次、同样的多数规则，
+差别只在**判断由谁来做**：
+
+| | 做法 |
+|---|---|
+| 本项目 | 模型只转写，算术在代码侧核对 |
+| 对照 A「直接问」 | 问模型这张票有没有被篡改 |
+| 对照 B「模型自己核算」 | 把同样的算术关系写进提示词，让模型自己算、自己判 |
+
+对照 B 检验的正是本项目的铁律——「校验不进提示词」——在数据上是否成立。
+每个对照约 `3 × 张数` 次请求。"""),
+    code('''arms = {
+    "对照 A 直接问": (baseline.ASK_PROMPT, baseline.ASK_INSTRUCTION, baseline.ask_flags),
+    "对照 B 模型自己核算": (baseline.SELF_CHECK_PROMPT, baseline.SELF_CHECK_INSTRUCTION,
+                        baseline.self_check_flags),
+}
+urls = [chain.pil_data_url(p["image"]) for p in plan]
+arm_readings, arm_result = {}, {}
+for name, (system, instruction, flags) in arms.items():
+    t0 = time.time()
+    rd = chain.read_many(chain.build_chain(system=system), urls, reads=READS,
+                         instruction=instruction)
+    arm_readings[name] = rd
+    arm_result[name] = [baseline.vote(rd[i], flags) for i in range(len(plan))]
+    print(f"{name}：{len(plan)} 张 x {READS} 次，耗时 {time.time()-t0:.0f}s")
+
+
+def rates(verdicts):
+    """(检出, 篡改张数, 误报, 未篡改张数, 无法判定)"""
+    t = [v for v, p in zip(verdicts, plan) if p["tampered"] and v in ("存疑", "可信")]
+    c = [v for v, p in zip(verdicts, plan) if not p["tampered"] and v in ("存疑", "可信")]
+    return (sum(v == "存疑" for v in t), len(t), sum(v == "存疑" for v in c), len(c),
+            sum(v not in ("存疑", "可信") for v in verdicts))
+
+
+ours = [d[4] for d in detail]
+table = {"本项目（代码核对，多数判定）": rates(ours),
+         "本项目（旧规则：自洽优先）": rates([d[7] for d in detail])}
+for name in arms:
+    table[name] = rates([r[0] for r in arm_result[name]])
+
+print(f"\\n评测集：{EVAL_NAME}")
+for name, (k, nt, f, nc, u) in table.items():
+    print(f"  {name}")
+    print(f"      TPR {k}/{nt} = {k/max(nt,1):.0%}    FPR {f}/{nc} = {f/max(nc,1):.0%}"
+          + (f"    无法判定 {u}" if u else ""))
+
+A, B = arm_result["对照 A 直接问"], arm_result["对照 B 模型自己核算"]
+print("\\n逐张判定（本项目 / A / B，括号内为 3 次里判存疑的次数）：")
+for i, p in enumerate(plan):
+    print(f"  #{i:3d}  CORD {p['cid']:>3}  {'已篡改' if p['tampered'] else '未篡改'}  "
+          f"{ours[i]} / {A[i][0]}({A[i][1]}/{A[i][2]}) / {B[i][0]}({B[i][1]}/{B[i][2]})")
+
+# 对照 B 漏检时模型自己怎么说——看它是算错了，还是把被改的数字读回了原值
+missed_b = [i for i, p in enumerate(plan) if p["tampered"] and B[i][0] == "可信"]
+if missed_b:
+    print("\\n对照 B 漏检的票，模型给的理由（第 1 次）：")
+for i in missed_b[:8]:
+    info, rd = plan[i]["info"], arm_readings["对照 B 模型自己核算"][i]
+    reason = rd[0].get("reason") if rd else "无读数"
+    print(f"  CORD {plan[i]['cid']}  {info['field']} {info['old']} -> {info['new']}：{reason}")'''),
+
+    md("""## 7. 存结果
 
 把三个实验的数字落盘，PPT 直接引用，不要凭记忆重打。"""),
     code('''import csv, json
@@ -296,13 +359,19 @@ summary = {
     "E3_旧规则_TPR": round(old_tp / max(n_t, 1), 4),
     "E3_旧规则_FPR": round(old_fp / max(n_c, 1), 4),
     "投票规则": "多数单次判定", "READS": READS, "代码版本": ver,
+    "对照组": {k: {"检出": f"{v[0]}/{v[1]}", "TPR": round(v[0] / max(v[1], 1), 4),
+                   "误报": f"{v[2]}/{v[3]}", "FPR": round(v[2] / max(v[3], 1), 4),
+                   "无法判定": v[4]}
+               for k, v in globals().get("table", {}).items()},
 }
 (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                                   encoding="utf-8")
 # 模型的原始读数一并存下：事后诊断、换规则重算都不必再发请求，也不依赖会话还开着
 raw = {"E2": {str(s["gt"]["meta"]["image_id"]): e2_readings[i] for i, s in enumerate(EVAL_SET)},
        "E3": {str(p["cid"]): {"tampered": p["tampered"], "info": p["info"],
-                              "reads": readings[p["idx"]]} for p in plan}}
+                              "reads": readings[p["idx"]]} for p in plan},
+       "对照组": {name: {str(p["cid"]): rd[p["idx"]] for p in plan}
+                  for name, rd in globals().get("arm_readings", {}).items()}}
 (out / "raw_readings.json").write_text(json.dumps(raw, ensure_ascii=False, default=str),
                                        encoding="utf-8")
 with (out / "e2_detail.csv").open("w", newline="", encoding="utf-8") as fh:

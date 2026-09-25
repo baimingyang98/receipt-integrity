@@ -59,7 +59,7 @@ def pil_data_url(img, fmt="JPEG"):
     return f"data:image/{fmt.lower()};base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
 
 
-def build_chain(model=MODEL, temperature=0, timeout=180):
+def build_chain(model=MODEL, temperature=0, timeout=180, system=SYSTEM_PROMPT):
     from langchain_core.output_parsers import JsonOutputParser
     from langchain_core.prompts import ChatPromptTemplate
     from langchain_deepseek import ChatDeepSeek
@@ -67,7 +67,7 @@ def build_chain(model=MODEL, temperature=0, timeout=180):
     llm = ChatDeepSeek(model=model, temperature=temperature,
                        max_retries=3, timeout=timeout)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
+        ("system", system),
         ("human", [
             {"type": "text", "text": "{instruction}"},
             {"type": "image_url", "image_url": {"url": "{image_url}"}},
@@ -76,12 +76,12 @@ def build_chain(model=MODEL, temperature=0, timeout=180):
     return prompt | llm | JsonOutputParser()
 
 
-def read_many(chain, urls, reads=3, concurrency=CONCURRENCY):
+def read_many(chain, urls, reads=3, concurrency=CONCURRENCY, instruction=INSTRUCTION):
     """对每张票据独立识别 reads 次，全部请求打包进一次并发批处理。
 
     返回 {票据下标: [原始 JSON, ...]}，失败的那次不计入。
     """
-    payloads = [{"instruction": INSTRUCTION, "image_url": u} for _ in range(reads) for u in urls]
+    payloads = [{"instruction": instruction, "image_url": u} for _ in range(reads) for u in urls]
     owners = [i for _ in range(reads) for i in range(len(urls))]
     out = {i: [] for i in range(len(urls))}
     try:

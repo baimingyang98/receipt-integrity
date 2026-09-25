@@ -222,6 +222,22 @@ check("CORD 90：差 1.00 的票不再算作标注自洽",
       cord.check_subtotal_explains_total(g90) == Decimal("1"),
       f"得 {cord.check_subtotal_explains_total(g90)}")
 
+# ---------------------------------------------------------------- 对照组
+
+import baseline  # noqa: E402
+
+check("对照：布尔值写成字符串也能解析",
+      baseline.ask_flags({"tampered": "true"}) is True
+      and baseline.self_check_flags({"consistent": "false"}) is True
+      and baseline.self_check_flags({"consistent": True}) is False
+      and baseline.ask_flags({}) is None and baseline.ask_flags("不是 JSON") is None)
+v = baseline.vote([{"tampered": True}, {"tampered": True}, {"tampered": False}], baseline.ask_flags)
+check("对照：与本项目同一条多数规则", v == ("存疑", 2, 3), f"得 {v}")
+v = baseline.vote([{"tampered": True}, {"tampered": False}, {}], baseline.ask_flags)
+check("对照：解析不了的那次不计入分母", v == ("存疑", 1, 2), f"得 {v}")
+v = baseline.vote([{}, "不是 JSON"], baseline.self_check_flags)
+check("对照：全部解析不了 -> 无法判定", v == ("无法判定", 0, 0), f"得 {v}")
+
 # ---------------------------------------------------------------- 篡改模块
 
 print("\n篡改模块")
