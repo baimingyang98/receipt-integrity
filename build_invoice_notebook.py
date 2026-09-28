@@ -83,47 +83,56 @@ print("API key 已就绪")'''),
 
     md("""## 3. E1：标注本身自洽吗
 
-只有标注完整、六条校验全部闭合的发票才进入实验——否则分不清误报来自方法还是来自数据。"""),
+只有标注完整、六条校验全部闭合的发票才进入实验——否则分不清误报来自方法还是来自数据。
+
+**内存**：原图 2481×3508，解码后每张约 26 MB，train 425 张全解码会占满 Colab 内存。
+所以 E1 只读标注列、不碰图像；选出评测集后再单独取这几张图，读入时就缩到长边 1600——
+之后篡改的、送模型的都是这一版。"""),
     code('''import json
 from datasets import load_dataset
+from PIL import Image
 
 DS = "katanaml-org/invoices-donut-data-v1"
 SPLIT = "dev"     # "dev"：train 前 20 张自洽发票；"eval"：validation + test，只跑一次
+MAX_SIDE = 1600
 
 
 def load(split):
+    ds = load_dataset(DS, split=split)
     rows = []
-    for i, r in enumerate(load_dataset(DS, split=split)):
-        g = json.loads(r["ground_truth"])["gt_parse"]
+    for i, gt in enumerate(ds["ground_truth"]):     # 只取标注列，不解码图像
+        g = json.loads(gt)["gt_parse"]
         rec = invoice.from_gt(g)
-        rows.append({"id": f"{split}#{i}", "image": r["image"], "gt": g, "rec": rec,
+        rows.append({"id": f"{split}#{i}", "ds": ds, "i": i, "gt": g, "rec": rec,
                      "clean": rec["complete"] and invoice.verdict(rec)[0] == "可信"})
     return rows
+
+
+def fetch_image(s):
+    img = s["ds"][s["i"]]["image"].convert("RGB")
+    k = MAX_SIDE / max(img.size)
+    return img.resize((round(img.size[0] * k), round(img.size[1] * k)), Image.LANCZOS) if k < 1 else img
 
 
 rows = load("train") if SPLIT == "dev" else load("validation") + load("test")
 clean = [r for r in rows if r["clean"]]
 EVAL_SET = clean[:20] if SPLIT == "dev" else clean
+for s in EVAL_SET:
+    s["image"] = fetch_image(s)
 print(f"{SPLIT}：共 {len(rows)} 张，标注完整 {sum(r['rec']['complete'] for r in rows)} 张，"
-      f"全部自洽 {len(clean)} 张，本次评测 {len(EVAL_SET)} 张")'''),
+      f"全部自洽 {len(clean)} 张，本次评测 {len(EVAL_SET)} 张（图像已缩到 {EVAL_SET[0]['image'].size}）")'''),
 
     md("""## 4. E2：转写准确率
 
-原图 2481×3508，缩到长边 1600 再送模型。比对 Total 行三个合计、商品行数、各行金额之和。"""),
+比对 Total 行三个合计、商品行数、各行金额之和。"""),
     code('''import time
 from decimal import Decimal
-from PIL import Image
 
 READS = 3
-MAX_SIDE = 1600
 
 
 def to_url(img):
-    img = img.convert("RGB")
-    s = MAX_SIDE / max(img.size)
-    if s < 1:
-        img = img.resize((round(img.size[0] * s), round(img.size[1] * s)), Image.LANCZOS)
-    return chain.pil_data_url(img)
+    return chain.pil_data_url(img.convert("RGB"))
 
 
 ch = chain.build_chain(system=chain.INVOICE_PROMPT)
