@@ -93,7 +93,7 @@ from datasets import load_dataset
 from PIL import Image
 
 DS = "katanaml-org/invoices-donut-data-v1"
-SPLIT = "dev"     # "dev"：train 前 20 张自洽发票；"eval"：validation + test，只跑一次
+SPLIT = "eval"    # "eval"：validation + test，只跑一次；"dev"：train 前 20 张（开发集，已完成）
 MAX_SIDE = 1600
 
 
@@ -303,6 +303,23 @@ for name, (k, nt, f, nc, u) in table.items():
     print(f"      TPR {k}/{nt} = {k / max(nt, 1):.0%}    FPR {f}/{nc} = {f / max(nc, 1):.0%}"
           + (f"    无法判定 {u}" if u else ""))
 
+# 单次识别层面：每张 3 次各自判定、不经投票。衡量的是「稳不稳」——
+# 开发集上对照 B 两轮各漏一张、却不是同一张，本项目两轮每张都是 3/3
+pairs = {"本项目（代码核对）": [tuple(int(x) for x in d[6].split("/")) if "/" in d[6] else None
+                          for d in detail]}
+for name in arms:
+    pairs[name] = [(r[1], r[2]) if r[2] else None for r in arm_result[name]]
+per_read = {}
+print()
+print("单次识别层面（每张 3 次各自判定，不经投票）：")
+for name, ps in pairs.items():
+    t = [pr for pr, p in zip(ps, plan) if pr and p["tampered"]]
+    c = [pr for pr, p in zip(ps, plan) if pr and not p["tampered"]]
+    kt, nt_ = sum(a for a, _ in t), sum(b for _, b in t)
+    kc, nc_ = sum(a for a, _ in c), sum(b for _, b in c)
+    per_read[name] = {"篡改票上判存疑": f"{kt}/{nt_}", "未篡改票上判存疑": f"{kc}/{nc_}"}
+    print(f"  {name}：篡改票上判存疑 {kt}/{nt_} 次，未篡改票上判存疑 {kc}/{nc_} 次")
+
 A, B = arm_result["对照 A 直接问"], arm_result["对照 B 模型自己核算"]
 print()
 print("逐张（本项目 / A / B）：")
@@ -331,6 +348,7 @@ summary = {
     "对照组": {k: {"检出": f"{v[0]}/{v[1]}", "TPR": round(v[0] / max(v[1], 1), 4),
                    "误报": f"{v[2]}/{v[3]}", "FPR": round(v[2] / max(v[3], 1), 4)}
                for k, v in globals().get("table", {}).items()},
+    "单次识别": globals().get("per_read", {}),
     "READS": READS, "代码版本": ver,
 }
 (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
