@@ -23,6 +23,19 @@ def _as_list(node):
     return node if isinstance(node, list) else [node]
 
 
+def _as_dict(node):
+    """sub_total / total 在 train 划分里偶尔被标注成多个块（list）。按键合并，
+    同一个键的多个值都保留，取值时由 _scalar 取第一个——与重复字段的既有处理一致。"""
+    if isinstance(node, dict):
+        return node
+    out = {}
+    for part in _as_list(node):
+        if isinstance(part, dict):
+            for k, v in part.items():
+                out.setdefault(k, []).append(v)
+    return out
+
+
 def _scalar(value):
     """同一字段被标注多次时值是 list（如 ['46.636', '46.636']），取第一个。"""
     while isinstance(value, list):
@@ -43,8 +56,8 @@ def _sum(values):
 def parse_gt(gt_parse, hint=None):
     """把一条 CORD 标注折算成校验需要的字段。"""
     menu = _as_list(gt_parse.get("menu"))
-    sub = gt_parse.get("sub_total") or {}
-    tot = gt_parse.get("total") or {}
+    sub = _as_dict(gt_parse.get("sub_total"))
+    tot = _as_dict(gt_parse.get("total"))
 
     # 商品行：优先用 price（该行实收），没有就退回 unitprice*cnt 的近似 itemsubtotal
     item_prices, item_discounts = [], []
@@ -118,8 +131,9 @@ def money_fields(gt_parse, hint=None):
     for i, it in enumerate(_as_list(gt_parse.get("menu"))):
         if isinstance(it, dict):
             add(f"menu[{i}].price", it.get("price"))
+    # dict 时与原先逐字相同（保证已有篡改计划可复现）；list 时各块的值都列为候选
     for key in ("subtotal_price", "discount_price", "tax_price", "service_price"):
-        add(f"sub_total.{key}", (gt_parse.get("sub_total") or {}).get(key))
+        add(f"sub_total.{key}", _as_dict(gt_parse.get("sub_total")).get(key))
     for key in ("total_price", "cashprice", "changeprice"):
-        add(f"total.{key}", (gt_parse.get("total") or {}).get(key))
+        add(f"total.{key}", _as_dict(gt_parse.get("total")).get(key))
     return out

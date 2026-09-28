@@ -222,6 +222,17 @@ check("CORD 90：差 1.00 的票不再算作标注自洽",
       cord.check_subtotal_explains_total(g90) == Decimal("1"),
       f"得 {cord.check_subtotal_explains_total(g90)}")
 
+# CORD train 里个别票的 sub_total / total 标注成多个块（list），曾让 parse_gt 崩溃
+g_list = {"menu": [{"nm": "A", "price": "10,000"}],
+          "sub_total": [{"subtotal_price": "10,000"}, {"tax_price": "1,000"}],
+          "total": [{"total_price": "11,000"}, {"cashprice": "20,000", "changeprice": "9,000"}]}
+r = cord.parse_gt(g_list)
+check("sub_total / total 为多个块时按键合并",
+      r["subtotal"] == Decimal("10000") and r["tax"] == Decimal("1000") and r["total"] == Decimal("11000")
+      and cord.check_subtotal_explains_total(r) == 0 and cord.check_payment_explains_total(r) == 0,
+      f"小计={r['subtotal']} 税={r['tax']} 应付={r['total']}")
+check("多个块时篡改候选也能列出", len(cord.money_fields(g_list)) == 6, f"{cord.money_fields(g_list)}")
+
 # ---------------------------------------------------------------- 小计缺失时的可选修正
 # CORD validation 的 CORD 47：商品价 42,000 被改成 42,009，3 次都如实读出，但没报小计
 
