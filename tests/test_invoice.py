@@ -185,5 +185,25 @@ gap = a[orig[1]:orig[3], orig[0] - 3:orig[0] - 1]          # 原字左侧被擦�
 check("新重绘：擦除处的底色就是灰色行的颜色（不被白色分隔线带偏）",
       np.abs(gap - np.array(ROW)).max() <= 3, f"最大偏差 {np.abs(gap - np.array(ROW)).max():.0f}")
 
+# 正式评测发现：带千位空格的数字被 OCR 切成多个词，整串重画把 "$ 15 300,00" 挤成 "$13 300,00"。
+# 现在只重画改动所在的词：其余词与 "$" 一个像素都不能动
+img = Image.new("RGB", (400, 50), "white")
+d = ImageDraw.Draw(img)
+fb = tamper._font(22, tamper.SANS_BOLD)
+placed = []
+for text, x in (("$", 100), ("15", 128), ("300,00", 168)):
+    d.text((x, 12), text, font=fb, fill="black")
+    placed.append((text, d.textbbox((x, 12), text, font=fb), (5, 1, 1)))
+gt = {"items": [], "summary": {"total_net_worth": "$ 15 300,00"}}
+ok_all, changed_words = True, set()
+for seed in range(20):
+    out, info = tamper.tamper_invoice(img, placed, gt, random.Random(seed))
+    diff = np.abs(np.array(out, float) - np.array(img, float)).sum(axis=2)
+    touched = [t for t, b, _ in placed if diff[b[1] - 2:b[3] + 3, b[0] - 2:b[2] + 3].sum() > 0]
+    changed_words.update(touched)
+    ok_all &= info is not None and len(touched) == 1 and touched[0] != "$" and info["box"] in [b for _, b, _ in placed]
+check("千位空格：只重画改动所在的词，另一个词与 $ 原样不动", ok_all and changed_words == {"15", "300,00"},
+      f"被改过的词 {sorted(changed_words)}")
+
 print(f"\n{sum(results)}/{len(results)} 通过")
 sys.exit(0 if all(results) else 1)

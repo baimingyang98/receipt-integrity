@@ -261,7 +261,7 @@ def _digits(s):
 
 
 def find_value(words, text):
-    """在 OCR 词表里找印着 text 的位置，返回 [(框, 前一个词, 印着的原文)]。
+    """在 OCR 词表里找印着 text 的位置，返回 [(框, 前一个词, 印着的原文, [(词, 词框)])]。
 
     "1 484,95" 会被 OCR 切成 "1" 与 "484,95"，所以同一行相邻的 1–3 个数字词拼起来也算。
     """
@@ -278,7 +278,7 @@ def find_value(words, text):
                 box = (min(w[1][0] for w in seg), min(w[1][1] for w in seg),
                        max(w[1][2] for w in seg), max(w[1][3] for w in seg))
                 prev = words[i - 1][0] if i > 0 and words[i - 1][2] == seg[0][2] else ""
-                hits.append((box, prev, " ".join(w[0] for w in seg)))
+                hits.append((box, prev, " ".join(w[0] for w in seg), [(w[0], w[1]) for w in seg]))
                 break
     return hits
 
@@ -319,11 +319,24 @@ def tamper_invoice(img, words, gt_parse, rng):
             font = SANS_BOLD
         if len(hits) != 1:
             continue
-        box, _, printed = hits[0]
-        new = perturb_number(printed, rng)
-        if not new or new == printed:
+        _, _, printed, seg = hits[0]
+        # 只重画改动所在的那个 OCR 词，其余词一个像素不动。整串重画会用 PIL 的空格宽度
+        # 替换原票的千位空格，把 "$ 15 300,00" 挤成 "$13 300,00"（正式评测里有 4 张如此）
+        for _ in range(10):
+            new = perturb_number(printed, rng)
+            if not new or new == printed:
+                continue
+            pos = next(k for k, (a, b) in enumerate(zip(printed, new)) if a != b)
+            start = 0
+            for word, wbox in seg:
+                if pos < start + len(word):
+                    break
+                start += len(word) + 1
+            if re.fullmatch(r"[\d.,\s]+", word):     # "$4" 这种连着符号的词不重画，换一位再试
+                break
+        else:
             continue
-        out, ok = render_matched(img, box, new, font_names=font)
+        out, ok = render_matched(img, wbox, new[start:start + len(word)], font_names=font)
         if ok:
-            return out, {"field": field, "old": printed, "new": new, "box": box}
+            return out, {"field": field, "old": printed, "new": new, "box": wbox}
     return img, None
