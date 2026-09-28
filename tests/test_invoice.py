@@ -158,5 +158,32 @@ for seed in range(30):
 check("篡改目标覆盖商品行与合计", fields == {"items[0].qty", "items[0].net_price",
                                     "summary.total_gross_worth"}, f"{sorted(fields)}")
 
+# 开发集发现：旧的重绘字小一圈、灰色行里留一块浅底，肉眼可辨。新重绘须与原字对齐
+ROW = (229, 229, 229)
+img = Image.new("RGB", (300, 60), "white")
+d = ImageDraw.Draw(img)
+d.rectangle([0, 10, 299, 50], fill=ROW)                  # 灰色表格行，上下是白色分隔
+f = tamper._font(22, tamper.SANS)
+d.text((200, 18), "66,00", font=f, fill=(20, 20, 20))
+
+
+def ink_box(im, region):
+    a = np.array(im.convert("L")).astype(float)
+    x0, y0, x1, y1 = region
+    ys, xs = np.where(a[y0:y1, x0:x1] < 120)
+    return x0 + xs.min(), y0 + ys.min(), x0 + xs.max() + 1, y0 + ys.max() + 1
+
+
+orig = ink_box(img, (150, 12, 299, 49))
+out, ok = tamper.render_matched(img, orig, "78,00", tamper.SANS)
+new = ink_box(out, (150, 12, 299, 49))
+check("新重绘：墨迹高度与原字一致（±1 像素）", ok and abs((new[3] - new[1]) - (orig[3] - orig[1])) <= 1,
+      f"原 {orig[3] - orig[1]} 新 {new[3] - new[1]}")
+check("新重绘：右边缘与原字对齐（±2 像素）", abs(new[2] - orig[2]) <= 2, f"原 {orig[2]} 新 {new[2]}")
+a = np.array(out).astype(float)
+gap = a[orig[1]:orig[3], orig[0] - 3:orig[0] - 1]          # 原字左侧被擦过的一条
+check("新重绘：擦除处的底色就是灰色行的颜色（不被白色分隔线带偏）",
+      np.abs(gap - np.array(ROW)).max() <= 3, f"最大偏差 {np.abs(gap - np.array(ROW)).max():.0f}")
+
 print(f"\n{sum(results)}/{len(results)} 通过")
 sys.exit(0 if all(results) else 1)

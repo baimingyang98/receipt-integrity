@@ -113,6 +113,50 @@ def render_over_box(img, box, new_text, font_names=MONO_BOLD):
     return out, True
 
 
+def render_matched(img, box, new_text, font_names=SANS, margin=3):
+    """按原字的墨迹精确重绘：新字的墨迹高度、右边缘、顶边都与原字对齐。
+
+    render_over_box 按框高粗估字号、背景取框外一圈，在商业发票上字会小一圈，
+    灰色行里还会留下一块更浅的底——肉眼就能看出来。这里改为：
+      - 背景取框内较亮的像素（字与字之间的底色），不受框外分隔线影响
+      - 在原图上量出原字墨迹的高度，逐个字号试，取墨迹高度最接近的那个
+    CORD 仍用 render_over_box，以便已有实验逐字节可复现。
+    """
+    arr = np.array(img.convert("RGB")).astype(float)
+    h, w = arr.shape[:2]
+    x0, y0 = max(0, int(box[0]) - margin), max(0, int(box[1]) - margin)
+    x1, y1 = min(w, int(box[2]) + margin), min(h, int(box[3]) + margin)
+    patch = arr[y0:y1, x0:x1]
+    if patch.size == 0:
+        return img, False
+    gray = patch.mean(axis=2)
+    bg = np.median(patch[gray >= np.percentile(gray, 60)], axis=0)
+    ink = _ink_color(patch)
+    ys, xs = np.where(gray < (bg.mean() + ink.mean()) / 2)
+    if len(xs) == 0:
+        return img, False
+    ix0, iy0, ix1, iy1 = x0 + xs.min(), y0 + ys.min(), x0 + xs.max() + 1, y0 + ys.max() + 1
+    target = iy1 - iy0
+
+    best = None
+    for size in range(6, 4 * target + 8):
+        f = _font(size, font_names)
+        l, t, r, b = f.getbbox(new_text)
+        if best is None or abs((b - t) - target) < abs(best[1] - target):
+            best = (f, b - t, l, t, r, b)
+        if b - t > target + 2:
+            break
+    f, _, l, t, r, b = best
+
+    out = img.convert("RGB").copy()
+    d = ImageDraw.Draw(out)
+    # 擦掉原字墨迹（外扩 2 像素）与新字将占的范围，再按墨迹框对齐画上新字
+    nx0 = ix1 - (r - l)
+    d.rectangle([min(ix0, nx0) - 2, iy0 - 2, ix1 + 1, iy1 + 1], fill=tuple(int(v) for v in bg))
+    d.text((ix1 - r, iy0 - t), new_text, font=f, fill=tuple(int(v) for v in ink))
+    return out, True
+
+
 # ---------------------------------------------------------------- 方式二：字形复制
 
 def copy_glyph(arr, tgt, src, rng):
@@ -279,7 +323,7 @@ def tamper_invoice(img, words, gt_parse, rng):
         new = perturb_number(printed, rng)
         if not new or new == printed:
             continue
-        out, ok = render_over_box(img, box, new, font_names=font)
+        out, ok = render_matched(img, box, new, font_names=font)
         if ok:
             return out, {"field": field, "old": printed, "new": new, "box": box}
     return img, None
