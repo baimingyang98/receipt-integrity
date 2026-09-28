@@ -249,6 +249,36 @@ B 漏检 6 张，第 1 次读数给出的理由里：
 **局限照旧**：篡改只改一个数字；所有组的误报都是 0，误报率在这批数据上区分不出方法优劣；
 对照组的提示词是我们写的，更好的提示词可能表现更好；只测了一个模型。
 
+## 场景升级：B2B 商业发票
+
+业务定位与官方发票查验渠道的分工见 [`docs/业务场景.md`](docs/业务场景.md)。
+简言之：境内增值税发票走税务总局查验平台；本工具面向没有中心化查验渠道的单据——
+境外发票、贸易融资里的商业发票、收据小票——做预审，存疑的附上失败的等式交人工复核。
+
+数据：[katanaml-org/invoices-donut-data-v1](https://huggingface.co/datasets/katanaml-org/invoices-donut-data-v1)
+（MIT），500 张**合成**的英文 B2B 发票。每张自带 6 条等式（`src/invoice.py`）：
+
+| | 校验 | 内容 |
+|---|---|---|
+| L1 | 行·数量×单价 | Qty × Net price = Net worth |
+| L2 | 行·含税金额 | Net worth × (1 + VAT%) = Gross worth |
+| S1 | 合计·行金额之和 | 各行 Net worth 之和 = Total 行 Net worth |
+| S2 | 合计·不含税+税 | Total 行 Net worth + VAT = Gross worth |
+| S3 | 合计·税率 | Net worth × VAT% = VAT |
+| S4 | 合计·两处一致 | 分税率小计行 = Total 行 |
+
+**E1（标注侧，与模型侧同一个 `checks()`，容差半分）**：标注完整且 6 条全部闭合的，
+train 373 / validation 47 / test 24。
+
+篡改：数据没有文字坐标，用 tesseract 定位后按原字体（DejaVu Sans）整块重绘一个数字；
+合计只改 Total 行，同一个数在票面出现多处时跳过（分不清改的是哪一处）。
+
+### 预先登记
+
+- **开发集**（`SPLIT = "dev"`）：train 前 20 张自洽发票，用来跑通流程、暴露问题，允许据此修改
+- **正式评测**（`SPLIT = "eval"`）：validation + test 共 71 张，从未使用；开发集之后冻结规则，只跑一次
+- 预期：本项目检出率不低于 CORD validation 的 93%，误报接近 0；对照 A、B 的检出率低于本项目
+
 ## 最重要的一个发现：模型会自发掩盖篡改
 
 把两张被改过的港式票据送进整票转写，结果是：
