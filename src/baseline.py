@@ -24,6 +24,20 @@ SELF_CHECK_PROMPT = """你在核对一张零售票据的算术是否自洽。先
 """
 SELF_CHECK_INSTRUCTION = "请核对这张票据的算术关系是否自洽。"
 
+# 商业发票版的对照 B：与 invoice.py 的六条校验一一对应
+INVOICE_SELF_CHECK_PROMPT = """你在核对一张商业发票的算术是否自洽。先读出三张表格里的数字，再逐条核对：
+1. 每一商品行：Qty × Net price = Net worth
+2. 每一商品行：Net worth × (1 + VAT%) = Gross worth
+3. 各商品行 Net worth 之和 = Total 行的 Net worth
+4. Total 行：Net worth + VAT = Gross worth
+5. Net worth × VAT% = VAT（SUMMARY 表按税率分列的每一行）
+6. SUMMARY 表按税率分列的行加起来 = Total 行
+四舍五入到分造成的差额（不超过半分）视为成立。
+只回一个 JSON 对象，不要别的内容：
+{{"checks": [{{"rule": 1, "holds": true}}], "consistent": true 或 false, "reason": "一句话理由"}}
+"""
+INVOICE_SELF_CHECK_INSTRUCTION = "请核对这张发票的算术关系是否自洽。"
+
 
 def _as_bool(value):
     """模型可能把布尔值写成字符串；认不出返回 None。"""

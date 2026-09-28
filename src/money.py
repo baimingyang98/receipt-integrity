@@ -16,6 +16,8 @@ from decimal import Decimal, InvalidOperation
 # 允许 "Rp. 111,000"、"HK$1,234.50"、"(5.39)"、"-$16.59"
 _NUM = re.compile(r"-?\d[\d.,]*")
 _CURRENCY = re.compile(r"(?i)\b(?:rp|hk|idr|usd|sgd|myr|php|thb)\b\.?\s*")
+# 欧式发票用空格作千位分隔符（"1 484,95"）：夹在数字之间、后面恰好跟 3 位数字的空白
+_SPACE_THOUSANDS = re.compile(r"(?<=\d)[ \u00a0\u202f](?=\d{3}(?:\D|$))")
 
 
 def parse_amount(value, thousands_hint=None):
@@ -33,7 +35,7 @@ def parse_amount(value, thousands_hint=None):
         return None
 
     text = _CURRENCY.sub("", value).replace("$", "").replace("￥", "").replace("¥", "")
-    text = text.strip()
+    text = _SPACE_THOUSANDS.sub("", text).strip()
     negative = text.startswith("(") and text.endswith(")")
     text = text.strip("()").strip()
 

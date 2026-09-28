@@ -60,21 +60,26 @@ def perturb_number(text, rng):
 
 # ---------------------------------------------------------------- 方式一：整块重绘
 
-def _font(size):
-    for name in ("DejaVuSansMono-Bold.ttf", "DejaVuSansMono.ttf", "DejaVuSans-Bold.ttf"):
+MONO_BOLD = ("DejaVuSansMono-Bold.ttf", "DejaVuSansMono.ttf", "DejaVuSans-Bold.ttf")  # 小票
+SANS = ("DejaVuSans.ttf",)              # 商业发票正文
+SANS_BOLD = ("DejaVuSans-Bold.ttf",)    # 商业发票 Total 行
+
+
+def _font(size, names=MONO_BOLD):
+    for name in names:
         try:
             return ImageFont.truetype(name, size)
         except OSError:
             pass
     try:  # matplotlib 自带 DejaVu，Colab 上一定有
         import matplotlib
-        p = Path(matplotlib.get_data_path()) / "fonts" / "ttf" / "DejaVuSansMono-Bold.ttf"
+        p = Path(matplotlib.get_data_path()) / "fonts" / "ttf" / names[0]
         return ImageFont.truetype(str(p), size)
     except Exception:
         return ImageFont.load_default()
 
 
-def render_over_box(img, box, new_text):
+def render_over_box(img, box, new_text, font_names=MONO_BOLD):
     """把 box 区域擦掉并重绘 new_text，尽量贴合原来的字号与颜色。"""
     x0, y0, x1, y1 = [int(v) for v in box]
     arr = np.array(img.convert("RGB")).astype(float)
@@ -94,14 +99,14 @@ def render_over_box(img, box, new_text):
     # 字号按框高收敛，再按框宽微调，保证新数字不溢出
     size = max(8, int((y1 - y0) * 1.05))
     for _ in range(12):
-        f = _font(size)
+        f = _font(size, font_names)
         tw, th = d.textbbox((0, 0), new_text, font=f)[2:]
         if tw <= (x1 - x0) and th <= (y1 - y0) * 1.25:
             break
         size -= 1
         if size < 8:
             break
-    f = _font(size)
+    f = _font(size, font_names)
     tw, th = d.textbbox((0, 0), new_text, font=f)[2:]
     d.text((x1 - tw, y0 + ((y1 - y0) - th) // 2), new_text,
            font=f, fill=tuple(int(v) for v in ink))
@@ -189,3 +194,92 @@ def tamper_cord(sample_image, valid_line, field, old_text, seed=0):
     if not ok:
         return sample_image, None
     return out, {"field": field, "old": old_text, "new": new_text, "box": box}
+
+
+# ---------------------------------------------------------------- 商业发票（无标注框，靠 OCR 定位）
+
+def ocr_words(img):
+    """tesseract 取词：[(文字, (x0, y0, x1, y1), 行号)]。需要 pytesseract 与 tesseract-ocr。"""
+    import pytesseract
+    d = pytesseract.image_to_data(img.convert("RGB"), output_type=pytesseract.Output.DICT)
+    out = []
+    for i, t in enumerate(d["text"]):
+        t = (t or "").strip()
+        if t:
+            x, y, w, h = d["left"][i], d["top"][i], d["width"][i], d["height"][i]
+            out.append((t, (x, y, x + w, y + h),
+                        (d["block_num"][i], d["par_num"][i], d["line_num"][i])))
+    return out
+
+
+def _digits(s):
+    return re.sub(r"[^\d,.]", "", s)
+
+
+def find_value(words, text):
+    """在 OCR 词表里找印着 text 的位置，返回 [(框, 前一个词, 印着的原文)]。
+
+    "1 484,95" 会被 OCR 切成 "1" 与 "484,95"，所以同一行相邻的 1–3 个数字词拼起来也算。
+    """
+    want = _digits(text)
+    hits = []
+    if not want:
+        return hits
+    for i in range(len(words)):
+        for n in (1, 2, 3):
+            seg = words[i:i + n]
+            if len(seg) < n or len({w[2] for w in seg}) > 1 or not all(_digits(w[0]) for w in seg):
+                break
+            if "".join(_digits(w[0]) for w in seg) == want:
+                box = (min(w[1][0] for w in seg), min(w[1][1] for w in seg),
+                       max(w[1][2] for w in seg), max(w[1][3] for w in seg))
+                prev = words[i - 1][0] if i > 0 and words[i - 1][2] == seg[0][2] else ""
+                hits.append((box, prev, " ".join(w[0] for w in seg)))
+                break
+    return hits
+
+
+def invoice_targets(gt_parse):
+    """标注里所有可改的金额与数量：[(字段, 原文)]。"""
+    out = []
+    items = gt_parse.get("items") or []
+    for i, it in enumerate(items if isinstance(items, list) else [items]):
+        if not isinstance(it, dict):
+            continue
+        for key, name in (("item_qty", "qty"), ("item_net_price", "net_price"),
+                          ("item_net_worth", "net_worth"), ("item_gross_worth", "gross_worth")):
+            v = it.get(key)
+            if isinstance(v, str) and any(c.isdigit() for c in v):
+                out.append((f"items[{i}].{name}", v))
+    s = gt_parse.get("summary") or {}
+    for key in ("total_net_worth", "total_vat", "total_gross_worth"):
+        v = s.get(key)
+        if isinstance(v, str) and any(c.isdigit() for c in v):
+            out.append((f"summary.{key}", v))
+    return out
+
+
+def tamper_invoice(img, words, gt_parse, rng):
+    """在商业发票上改动一个数字。返回 (新图, 说明)；找不到可改的目标返回 (原图, None)。
+
+    - 合计在票面印了两遍（分税率小计行与 Total 行）：只改带 $ 的 Total 行
+    - 同一个数在票面出现多处时（如数量为 1 时单价等于金额），分不清改的是哪一处，跳过
+    """
+    targets = invoice_targets(gt_parse)
+    rng.shuffle(targets)
+    for field, text in targets:
+        hits = find_value(words, text)
+        font = SANS
+        if field.startswith("summary."):
+            hits = [h for h in hits if h[1] == "$" or h[2].startswith("$")]
+            font = SANS_BOLD
+        if len(hits) != 1:
+            continue
+        box, _, printed = hits[0]
+        new = perturb_number(printed, rng)
+        if not new or new == printed:
+            continue
+        out, ok = render_over_box(img, box, new, font_names=font)
+        if ok:
+            return out, {"field": field, "old": printed, "new": new, "box": box}
+    return img, None

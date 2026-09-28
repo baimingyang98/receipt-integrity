@@ -43,6 +43,27 @@ SYSTEM_PROMPT = """你在转写一张零售票据。照抄票面上印的内容�
 
 INSTRUCTION = "照抄这张票据的各行金额与合计，按字段定义输出 JSON。"
 
+# 商业发票：同样只转写。三张表格（商品行、分税率小计行、Total 行）逐格照抄，
+# 不告诉模型这些数字之间有什么关系。
+INVOICE_PROMPT = """你在转写一张商业发票。照抄票面上印的内容，不要做任何计算。
+
+按 JSON 输出：
+- "items"：ITEMS 表格，每行一条：{{"qty": Qty 列, "net_price": Net price 列, "net_worth": Net worth 列, "vat": VAT [%] 列, "gross_worth": Gross worth 列}}
+- "summary_rows"：SUMMARY 表格里按税率分列的行（Total 行之上的那些行），每行一条：
+  {{"vat": VAT [%] 列, "net_worth": Net worth 列, "vat_amount": VAT 列, "gross_worth": Gross worth 列}}
+- "total"：SUMMARY 表格的 Total 行：{{"net_worth": ..., "vat_amount": ..., "gross_worth": ...}}
+
+规则：
+- 只转写。不要加、减、乘、核对或调平任何数字。
+- 票面数字若看起来对不上，也照原样报，不要修正。
+- 一格一值，不合并、不编造、不遗漏。
+- 数字连同空格、逗号、小数点、货币符号一起照抄，票面写 "1 484,95" 就写 "1 484,95"。
+- 只回一个 JSON 对象，不要别的内容：
+{{"items": [{{"qty": "", "net_price": "", "net_worth": "", "vat": "", "gross_worth": ""}}], "summary_rows": [{{"vat": "", "net_worth": "", "vat_amount": "", "gross_worth": ""}}], "total": {{"net_worth": "", "vat_amount": "", "gross_worth": ""}}}}
+"""
+
+INVOICE_INSTRUCTION = "照抄这张发票三张表格里的每一格，按字段定义输出 JSON。"
+
 
 def image_data_url(path):
     """把本地图片编码成多模态消息可用的 data URL。"""
