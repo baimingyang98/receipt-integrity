@@ -222,6 +222,27 @@ check("CORD 90：差 1.00 的票不再算作标注自洽",
       cord.check_subtotal_explains_total(g90) == Decimal("1"),
       f"得 {cord.check_subtotal_explains_total(g90)}")
 
+# ---------------------------------------------------------------- 小计缺失时的可选修正
+# CORD validation 的 CORD 47：商品价 42,000 被改成 42,009，3 次都如实读出，但没报小计
+
+p47 = {"items": ["42,009"], "subtotal": None, "total": "42,000",
+       "payments": [{"label": "CASH", "amount": "50,000"}], "change": "8,000"}
+v, failed, c = idr(p47)
+check("CORD 47：默认规则下无从核对商品行，判可信（与 validation 实测一致）", v == "可信",
+      f"得 {v}")
+r47 = receipt.parse_reading(p47)
+v, failed, c = receipt.verdict(r47, locale=receipt.IDR, fallback=True)
+check("CORD 47：小计缺失且无税费时，商品行改与应付核对 -> 判存疑", v == "存疑" and failed == ["c2"],
+      f"得 {v}{failed} c2差={c['c2_gap']}")
+v, _, _ = receipt.verdict(receipt.parse_reading(dict(p47, items=["42,000"])),
+                          locale=receipt.IDR, fallback=True)
+check("CORD 47 未篡改：修正后仍判可信", v == "可信", f"得 {v}")
+v, failed, c = receipt.verdict(receipt.parse_reading(dict(p47, tax="4,200", total="46,209")),
+                               locale=receipt.IDR, fallback=True)
+check("有税额时不启用修正（应付不等于小计）", c["c2_gap"] is None, f"c2差={c['c2_gap']}")
+m = receipt.merge([r47] * 3, locale=receipt.IDR, fallback=True)
+check("merge 透传修正开关", m["verdict"] == "存疑", f"得 {m['verdict']}")
+
 # ---------------------------------------------------------------- 对照组
 
 import baseline  # noqa: E402

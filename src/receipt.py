@@ -133,8 +133,13 @@ def parse_reading(payload, hint=None):
     }
 
 
-def checks(rec, tol=None, locale=HK):
-    """各条校验的差额。差额为 None 表示这条校验在这张票上不适用。"""
+def checks(rec, tol=None, locale=HK, fallback=False):
+    """各条校验的差额。差额为 None 表示这条校验在这张票上不适用。
+
+    fallback=True：票面读不到小计、又没有税费、服务费、舍入与小计下方的折扣时，
+    校验二改用应付代替小计。validation 上模型漏报小计的 4 张票，小计都等于应付，
+    CORD 47 的商品行篡改因此无从核对而漏检。此项在 CORD train 确认性评测中预先登记。
+    """
     tol = locale["tol"] if tol is None else tol
     if locale["discount_in_subtotal"]:
         d_in, d_out = rec["disc_above"] + rec["disc_unplaced"], rec["disc_below"]
@@ -150,6 +155,9 @@ def checks(rec, tol=None, locale=HK):
     c2 = None
     if sub is not None and rec["n_items"]:
         c2 = rec["items_total"] - d_in - sub
+    elif (fallback and sub is None and rec["n_items"] and total is not None and d_out == 0
+          and rec["tax"] == 0 and rec["service"] == 0 and rec["rounding"] == 0):
+        c2 = rec["items_total"] - d_in - total
     # 校验四：付款 - 找零 = 应付。票面同时印了应付总额与付款行才适用。
     # 金额相同的付款行按一笔算也能闭合时取那个差额：两笔金额恰好相同的真实分笔付款，
     # 远少于同一笔付款在票面印两遍
@@ -164,12 +172,12 @@ def checks(rec, tol=None, locale=HK):
             "c4_gap": c4, "c4_pass": ok(c4), "labels_ok": rec["labels_ok"]}
 
 
-def verdict(rec, tol=None, locale=HK):
+def verdict(rec, tol=None, locale=HK, fallback=False):
     """可信 / 存疑 / 无法核验，以及失败的是哪几条。
 
     一条校验都不适用时判「无法核验」，而不是默认可信。
     """
-    c = checks(rec, tol, locale)
+    c = checks(rec, tol, locale, fallback)
     applicable = [n for n in CHECKS if c[f"{n}_pass"] is not None]
     if not applicable:
         return "无法核验", [], c
@@ -182,7 +190,7 @@ FIELDS = ("subtotal", "tax", "service", "rounding", "total", "total_printed",
           "discount_total", "items_total", "n_items", "labels_ok")
 
 
-def merge(readings, tol=None, locale=HK, rule="majority"):
+def merge(readings, tol=None, locale=HK, rule="majority", fallback=False):
     """跨多次识别取共识，返回合并后的读数，判定写在 verdict / failed 两个键里。
 
     rule="majority"（默认）：判定取各次识别单独判定的多数，至少一半判存疑即存疑；
@@ -196,13 +204,13 @@ def merge(readings, tol=None, locale=HK, rule="majority"):
     recs = [r for r in readings if r]
     if not recs:
         return None
-    per = [verdict(r, tol, locale) for r in recs]
+    per = [verdict(r, tol, locale, fallback) for r in recs]
     judged = [(v, failed) for v, failed, _ in per if v != "无法核验"]
 
     if rule == "consistent":
         pool = recs
         for n in CHECKS:
-            keep = [r for r in pool if checks(r, tol, locale)[f"{n}_pass"] is not False]
+            keep = [r for r in pool if checks(r, tol, locale, fallback)[f"{n}_pass"] is not False]
             pool = keep or pool
         best = max(r["labels_ok"] for r in pool)
         pool = [r for r in pool if r["labels_ok"] == best]
@@ -220,7 +228,7 @@ def merge(readings, tol=None, locale=HK, rule="majority"):
     out["reads_flagged"] = sum(v == "存疑" for v, _ in judged)
 
     if rule == "consistent":
-        out["verdict"], out["failed"], _ = verdict(out, tol, locale)
+        out["verdict"], out["failed"], _ = verdict(out, tol, locale, fallback)
     elif not judged:
         out["verdict"], out["failed"] = "无法核验", []
     elif 2 * out["reads_flagged"] >= len(judged):
