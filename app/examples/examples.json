@@ -1,0 +1,47 @@
+{
+ "examples": [
+  {
+   "file": "hk_receipt2.jpg",
+   "type": "hk",
+   "title": "港式超市小票",
+   "tampered": false,
+   "note": "未改动。折扣行把金额写进了标签（Buy 2 Save $6），标签与金额栏互相印证。"
+  },
+  {
+   "file": "cord_val36_original.jpg",
+   "type": "idr",
+   "title": "印尼小票 CORD 36 · 原图",
+   "tampered": false,
+   "note": "未改动。"
+  },
+  {
+   "file": "cord_val36_tax_price.jpg",
+   "type": "idr",
+   "title": "CORD 36 · 税额被改",
+   "tampered": true,
+   "note": "税额 1,727 → 1,427。实验中本项目 3 次全部检出；把算术写进提示词、让模型自己核的对照组，把它读成 1,727 并判自洽。"
+  },
+  {
+   "file": "cord_val23_cashprice.jpg",
+   "type": "idr",
+   "title": "CORD 23 · 付款被改",
+   "tampered": true,
+   "note": "现金 20.000 → 20.050。实验中本项目 3 次全部检出；对照组以「没有找零行」为由跳过了付款核对。"
+  },
+  {
+   "file": "invoice_61356291_original.jpg",
+   "type": "invoice",
+   "title": "B2B 商业发票 · 原图",
+   "tampered": false,
+   "note": "未改动。"
+  },
+  {
+   "file": "invoice_61356291_row2_net.jpg",
+   "type": "invoice",
+   "title": "商业发票 · 第 2 行金额被改",
+   "tampered": true,
+   "note": "第 2 行金额 112,32 → 117,32：行内两条等式与「各行金额之和」同时不成立。"
+  }
+ ],
+ "attribution": "CORD-v2（NAVER CLOVA，CC BY 4.0）；katanaml-org/invoices-donut-data-v1（MIT，合成发票）；港式小票为作者本人的票据。篡改图用与实验相同的方法生成。"
+}

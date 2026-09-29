@@ -6,7 +6,7 @@
 import re
 from decimal import Decimal
 
-from money import parse_amount
+from money import fmt, parse_amount
 
 ZERO = Decimal("0.00")
 
@@ -130,6 +130,7 @@ def parse_reading(payload, hint=None):
         "total": printed_total if printed_total is not None else paid,
         "total_printed": printed_total is not None,
         "paid": paid, "paid_distinct": paid_distinct,
+        "pay_sum": sum(payments, ZERO) if payments else None, "change": change,
     }
 
 
@@ -240,3 +241,67 @@ def merge(readings, tol=None, locale=HK, rule="majority", fallback=False):
     else:
         out["verdict"], out["failed"] = "可信", []
     return out
+
+
+NAMES = {"c1": "校验一 应付闭合", "c2": "校验二 商品行解释小计", "c4": "校验四 付款解释应付"}
+RULES = {"c1": "应付 = 小计 − 小计下方的折扣 + 税 + 服务费 + 舍入",
+         "c2": "商品行合计 − 小计上方的折扣 = 小计",
+         "c4": "付款 − 找零 = 应付"}
+
+
+def explain(rec, locale=HK, tol=None, fallback=False):
+    """把一次读数的各条校验写成审核员看得懂的算式：规则、代入后的计算、票面值、差额。
+
+    不适用的校验也列出来（pass 为 None），让人知道这张票上缺了哪一行、哪条核不了。
+    """
+    c = checks(rec, tol, locale, fallback)
+    if locale["discount_in_subtotal"]:
+        d_in, d_out = rec["disc_above"] + rec["disc_unplaced"], rec["disc_below"]
+    else:
+        d_in, d_out = rec["disc_above"], rec["disc_below"] + rec["disc_unplaced"]
+    sub, total = rec["subtotal"], rec["total"]
+
+    def terms(pairs, result):
+        """("小计", 100), ("−", "折扣", 5) ... -> "小计 100 − 折扣 5 = 95"；为 0 的项省略，
+        负的加项写成减号（"− 舍入 0.01"），只有一项时不写等号。"""
+        (name0, v0), *rest = pairs
+        parts = [f"{name0} {fmt(v0)}"]
+        for op, name, v in rest:
+            if v:
+                if v < 0:
+                    op, v = ("−" if op == "+" else "+"), -v
+                parts.append(f"{op} {name} {fmt(v)}")
+        return " ".join(parts) + (f" = {fmt(result)}" if len(parts) > 1 else "")
+
+    rows = []
+    calc = printed = None
+    if c["c1_gap"] is not None:
+        expect = sub - d_out + rec["tax"] + rec["service"] + rec["rounding"]
+        calc = terms([("小计", sub), ("−", "下方折扣", d_out), ("+", "税", rec["tax"]),
+                      ("+", "服务费", rec["service"]), ("+", "舍入", rec["rounding"])], expect)
+        printed = f"票面应付 {fmt(total)}"
+    rows.append({"check": "c1", "name": NAMES["c1"], "rule": RULES["c1"], "calc": calc,
+                 "printed": printed, "gap": c["c1_gap"], "pass": c["c1_pass"],
+                 "missing": None if calc else "票面缺小计或应付"})
+
+    calc = printed = None
+    if c["c2_gap"] is not None:
+        expect = rec["items_total"] - d_in
+        calc = terms([("商品行合计", rec["items_total"]), ("−", "上方折扣", d_in)], expect)
+        printed = f"票面小计 {fmt(sub)}" if sub is not None else f"票面应付 {fmt(total)}（无小计）"
+    rows.append({"check": "c2", "name": NAMES["c2"], "rule": RULES["c2"], "calc": calc,
+                 "printed": printed, "gap": c["c2_gap"], "pass": c["c2_pass"],
+                 "missing": None if calc else "票面缺小计或商品行"})
+
+    calc = printed = None
+    if c["c4_gap"] is not None:
+        use_distinct = abs(rec["paid_distinct"] - total) < abs(rec["paid"] - total)
+        paid = rec["paid_distinct"] if use_distinct else rec["paid"]
+        calc = f"付款 {fmt(paid + rec['change'])} − 找零 {fmt(rec['change'])} = {fmt(paid)}"
+        if use_distinct:
+            calc += "（同一笔付款印了两遍，按一笔计）"
+        printed = f"票面应付 {fmt(total)}"
+    rows.append({"check": "c4", "name": NAMES["c4"], "rule": RULES["c4"], "calc": calc,
+                 "printed": printed, "gap": c["c4_gap"], "pass": c["c4_pass"],
+                 "missing": None if calc else "票面没有同时印应付与付款行"})
+    return rows

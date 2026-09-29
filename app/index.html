@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>票据不说谎 · 单据可信度核验</title>
+<style>
+  :root {
+    --ink: #1c2433; --muted: #6b7385; --line: #e4e7ee; --bg: #f5f6f9; --card: #fff;
+    --navy: #1f2a44; --red: #c7000b; --red-bg: #fdecec; --green: #17804a; --green-bg: #e8f5ee;
+    --grey: #8a90a0; --grey-bg: #eef0f4; --mono: "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.55 "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif; }
+  header { background: var(--navy); color: #fff; padding: 16px 28px; display: flex; align-items: center; gap: 20px; }
+  header h1 { margin: 0; font-size: 21px; letter-spacing: .5px; }
+  header .tag { font-size: 13px; opacity: .8; }
+  header .status { margin-left: auto; font-size: 12.5px; opacity: .85; text-align: right; }
+  main { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px 28px; max-width: 1500px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 14px; color: var(--muted); font-weight: 600; letter-spacing: .5px; }
+  aside .card + .card { margin-top: 14px; }
+  .examples { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ex { border: 1.5px solid var(--line); border-radius: 8px; padding: 6px; cursor: pointer; background: #fff; text-align: left; }
+  .ex:hover { border-color: #b9c0cf; }
+  .ex.on { border-color: var(--navy); box-shadow: 0 0 0 2px rgba(31,42,68,.12); }
+  .ex img { width: 100%; height: 92px; object-fit: cover; object-position: top; border-radius: 5px; display: block; }
+  .ex .t { font-size: 12.5px; margin-top: 5px; line-height: 1.35; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px; margin-top: 4px; }
+  .pill.tam { background: var(--red-bg); color: var(--red); }
+  .pill.ok { background: var(--green-bg); color: var(--green); }
+  .pill.cache { background: var(--grey-bg); color: var(--grey); margin-left: 4px; }
+  .drop { border: 1.5px dashed #c3c9d6; border-radius: 8px; padding: 18px; text-align: center; color: var(--muted);
+          cursor: pointer; font-size: 13.5px; }
+  .drop.over { border-color: var(--navy); background: #f0f2f7; }
+  label.row { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 0; font-size: 13.5px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { border: 0; background: #fff; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; color: var(--ink); }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--navy); color: #fff; }
+  .run { width: 100%; margin-top: 14px; padding: 11px; border: 0; border-radius: 8px; background: var(--navy);
+         color: #fff; font: inherit; font-size: 15.5px; font-weight: 600; cursor: pointer; }
+  .run:disabled { opacity: .5; cursor: default; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 10px; min-height: 20px; }
+  .banner { display: flex; align-items: center; gap: 18px; padding: 18px 20px; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+  .verdict { font-size: 30px; font-weight: 700; padding: 6px 22px; border-radius: 10px; letter-spacing: 2px; white-space: nowrap; }
+  .v-存疑 { background: var(--red-bg); color: var(--red); }
+  .v-可信 { background: var(--green-bg); color: var(--green); }
+  .v-无法核验, .v-识别失败 { background: var(--grey-bg); color: var(--grey); }
+  .banner .sub { font-size: 14px; }
+  .banner .src { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+  .principle { margin-left: auto; font-size: 12.5px; color: var(--muted); text-align: right; max-width: 260px; }
+  .checks { margin-top: 14px; display: grid; gap: 10px; }
+  .chk { border: 1px solid var(--line); border-left-width: 5px; border-radius: 8px; padding: 11px 14px; background: #fff; }
+  .chk.fail { border-left-color: var(--red); }
+  .chk.pass { border-left-color: var(--green); }
+  .chk.na { border-left-color: #cfd3dc; color: var(--muted); }
+  .chk .top { display: flex; align-items: baseline; gap: 10px; }
+  .chk .name { font-weight: 600; }
+  .chk .rule { font-size: 12.5px; color: var(--muted); }
+  .chk .state { margin-left: auto; font-size: 13px; font-weight: 600; }
+  .chk.fail .state { color: var(--red); } .chk.pass .state { color: var(--green); }
+  .chk .math { font-family: var(--mono); font-size: 14px; margin-top: 5px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .chk .gap { font-weight: 700; }
+  .chk.fail .gap { color: var(--red); }
+  .lower { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, 1fr); gap: 14px; margin-top: 14px; }
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 1fr; }
+    .lower { grid-template-columns: 1fr; }
+    .principle { display: none; }
+  }
+  .preview { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; }
+  .preview img { max-width: 100%; max-height: 560px; border-radius: 6px; cursor: zoom-in; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+  td.num { font-family: var(--mono); }
+  .reads { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .reads span { font-size: 12px; padding: 2px 8px; border-radius: 99px; }
+  .empty { color: var(--muted); padding: 60px 20px; text-align: center; }
+  .spin { width: 22px; height: 22px; border: 3px solid #d7dbe4; border-top-color: var(--navy); border-radius: 50%;
+          animation: s 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 10px; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  .err { color: var(--red); background: var(--red-bg); border-radius: 8px; padding: 12px 14px; }
+  footer { max-width: 1500px; margin: 0 auto; padding: 4px 28px 22px; font-size: 12px; color: var(--muted); }
+  .zoom { position: fixed; inset: 0; background: rgba(10,14,24,.85); display: none; align-items: center; justify-content: center; cursor: zoom-out; z-index: 9; }
+  .zoom img { max-width: 95vw; max-height: 95vh; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>票据不说谎</h1>
+    <div class="tag">单据可信度核验 · 模型只负责转写，所有算术在代码侧核对</div>
+  </div>
+  <div class="status" id="status">连接中…</div>
+</header>
+
+<main>
+  <aside>
+    <div class="card">
+      <h2>示例单据</h2>
+      <div class="examples" id="examples"></div>
+    </div>
+    <div class="card">
+      <h2>或上传一张</h2>
+      <div class="drop" id="drop">拖入图片，或点击选择<input type="file" id="file" accept="image/*" hidden></div>
+      <label class="row">单据类型 <span class="seg" id="doctype"></span></label>
+      <label class="row">独立识别次数 <span class="seg" id="reads"></span></label>
+      <label class="row">来源 <span class="seg" id="mode"></span></label>
+      <button class="run" id="run" disabled>核验</button>
+      <div class="note" id="note"></div>
+    </div>
+  </aside>
+
+  <section id="result">
+    <div class="card empty">选一张示例或上传单据，点「核验」。</div>
+  </section>
+</main>
+<footer id="foot"></footer>
+<div class="zoom" id="zoom"><img alt=""></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = { image: "", example: "", doc: "idr", reads: 3, mode: "live", status: null };
+
+function seg(el, options, key) {
+  el.innerHTML = "";
+  for (const [value, text] of options) {
+    const b = document.createElement("button");
+    b.textContent = text; b.type = "button";
+    b.className = state[key] === value ? "on" : "";
+    b.onclick = () => { state[key] = value; seg(el, options, key); };
+    el.appendChild(b);
+  }
+}
+
+function drawControls() {
+  const docs = Object.entries(state.status.doc_types);
+  seg($("#doctype"), docs, "doc");
+  seg($("#reads"), [[1, "1"], [3, "3"], [5, "5"]], "reads");
+  seg($("#mode"), [["live", "实时识别"], ["replay", "回放"]], "mode");
+}
+
+async function init() {
+  state.status = await (await fetch("/api/status")).json();
+  if (!state.status.has_key) state.mode = "replay";
+  $("#status").innerHTML = `模型 ${state.status.model}<br>密钥 ${state.status.has_key ? "已配置" : "未配置 · 只能回放"} · 已缓存 ${state.status.cached} 次真实识别`;
+  drawControls();
+  const manifest = await (await fetch("/api/examples")).json();
+  $("#foot").textContent = "数据与许可：" + manifest.attribution;
+  const box = $("#examples");
+  for (const ex of manifest.examples) {
+    const b = document.createElement("button");
+    b.className = "ex"; b.type = "button"; b.dataset.file = ex.file;
+    b.innerHTML = `<img src="/examples/${ex.file}" alt=""><div class="t">${ex.title}</div>` +
+      `<span class="pill ${ex.tampered ? "tam" : "ok"}">${ex.tampered ? "被改过" : "原图"}</span>` +
+      (ex.cached ? `<span class="pill cache">可回放</span>` : "");
+    b.onclick = () => pickExample(ex);
+    box.appendChild(b);
+  }
+  const q = new URLSearchParams(location.search);
+  if (q.get("mode")) state.mode = q.get("mode");
+  drawControls();
+  const pre = manifest.examples.find(e => e.file === q.get("example"));
+  if (pre) { pickExample(pre); if (q.get("auto")) run(); }
+}
+
+function pickExample(ex) {
+  state.example = ex.file; state.image = ""; state.doc = ex.type;
+  document.querySelectorAll(".ex").forEach(e => e.classList.toggle("on", e.dataset.file === ex.file));
+  $("#note").textContent = ex.note;
+  drawControls();
+  $("#run").disabled = false;
+  showPreviewOnly(`/examples/${ex.file}`);
+}
+
+function loadFile(f) {
+  if (!f || !f.type.startsWith("image/")) return;
+  const r = new FileReader();
+  r.onload = () => {
+    state.image = r.result; state.example = "";
+    document.querySelectorAll(".ex").forEach(e => e.classList.remove("on"));
+    $("#note").textContent = `已选择：${f.name}。请确认单据类型。`;
+    $("#run").disabled = false;
+    showPreviewOnly(r.result);
+  };
+  r.readAsDataURL(f);
+}
+
+function preview(src) { return `<div class="preview"><img src="${src}" alt="单据" onclick="zoom(this.src)"></div>`; }
+function showPreviewOnly(src) {
+  $("#result").innerHTML = `<div class="lower" style="margin-top:0">${preview(src)}<div class="card empty">点「核验」开始。</div></div>`;
+}
+function zoom(src) { const z = $("#zoom"); z.querySelector("img").src = src; z.style.display = "flex"; }
+$("#zoom").onclick = () => $("#zoom").style.display = "none";
+
+async function run() {
+  $("#run").disabled = true;
+  const src = state.example ? `/examples/${state.example}` : state.image;
+  const waiting = state.mode === "live"
+    ? `模型正在逐格照抄票面（${state.reads} 次独立识别，并行进行）…`
+    : "读取上次真实识别的结果…";
+  $("#result").innerHTML = `<div class="card"><span class="spin"></span>${waiting}</div>` +
+    `<div class="lower">${preview(src)}<div></div></div>`;
+  try {
+    const resp = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: state.image, example: state.example, doc_type: state.doc,
+                             reads: state.reads, mode: state.mode }) });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    render(data, src);
+  } catch (e) {
+    $("#result").innerHTML = `<div class="err">${e.message}</div><div class="lower">${preview(src)}<div></div></div>`;
+  } finally {
+    $("#run").disabled = false;
+  }
+}
+
+function render(d, src) {
+  const src_line = d.source === "live"
+    ? `实时识别 · ${d.seconds} 秒 · ${d.model}`
+    : `回放：${d.at} 的真实识别结果 · ${d.model}`;
+  const flagged = d.reads ? `${d.reads} 次独立识别中 ${d.reads_flagged} 次判存疑` : "";
+  const failed = d.failed && d.failed.length ? `不成立：${d.failed.join("、")}` : "";
+  let html = `<div class="banner"><div class="verdict v-${d.verdict}">${d.verdict}</div>` +
+    `<div><div class="sub">${flagged}${failed ? "　·　" + failed : ""}</div><div class="src">${src_line}</div>` +
+    (d.labels_ok ? `<div class="src">折扣标签自带金额印证 ${d.labels_ok} 条</div>` : "") + `</div>` +
+    `<div class="principle">判定来自代码侧的算术核对，不来自模型的判断。模型从不知道自己被按什么标准检查。</div></div>`;
+  html += `<div class="checks">`;
+  for (const c of d.checks) {
+    const cls = c.pass === null ? "na" : (c.pass ? "pass" : "fail");
+    const st = c.pass === null ? "不适用" : (c.pass ? "✓ 成立" : "✗ 不成立");
+    html += `<div class="chk ${cls}"><div class="top"><span class="name">${c.name}</span>` +
+      `<span class="rule">${c.rule}</span><span class="state">${st}</span></div>`;
+    html += c.pass === null
+      ? `<div class="math">${c.missing}</div>`
+      : `<div class="math"><span>${c.calc}</span><span>${c.printed}</span><span class="gap">差 ${c.gap}</span></div>`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+  let side = `<div class="card"><h2>共识读数（${d.reads} 次多数）</h2><table>` +
+    d.ledger.map(([k, v]) => `<tr><td>${k}</td><td class="num">${v}</td></tr>`).join("") + `</table>`;
+  if (d.items && d.items.length) {
+    side += `<h2 style="margin-top:16px">商品行（与共识一致的那次读数）</h2><table><tr><th>#</th><th>数量</th><th>单价</th><th>金额</th><th>税率</th><th>含税</th></tr>` +
+      d.items.map((r, i) => `<tr><td>${i + 1}</td>${r.map(v => `<td class="num">${v}</td>`).join("")}</tr>`).join("") + `</table>`;
+  }
+  side += `<div class="reads">` + d.per_read.map((v, i) =>
+    `<span class="v-${v}">第 ${i + 1} 次：${v}</span>`).join("") + `</div></div>`;
+  html += `<div class="lower">${preview(src)}${side}</div>`;
+  $("#result").innerHTML = html;
+}
+
+const drop = $("#drop");
+drop.onclick = () => $("#file").click();
+$("#file").onchange = e => loadFile(e.target.files[0]);
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); loadFile(e.dataTransfer.files[0]); };
+$("#run").onclick = run;
+init().catch(e => { $("#status").textContent = "服务未连接：" + e.message; });
+</script>
+</body>
+</html>

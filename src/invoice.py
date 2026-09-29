@@ -20,7 +20,7 @@
 from collections import Counter
 from decimal import Decimal
 
-from money import parse_amount
+from money import fmt, parse_amount
 
 ZERO = Decimal("0")
 # 半分：四舍五入到分能解释的差额放过，改动 1 分即判不闭合。
@@ -172,4 +172,54 @@ def merge(readings, tol=TOL):
                          or [n for n in CHECKS if any(n in failed for _, failed in judged)])
     else:
         out["verdict"], out["failed"] = "可信", []
+    return out
+
+
+RULES = {"L1": "数量 × 单价 = 金额（逐行）", "L2": "金额 × (1 + 税率) = 含税金额（逐行）",
+         "S1": "各行金额之和 = Total 行不含税合计", "S2": "不含税合计 + 税额 = 含税合计",
+         "S3": "不含税 × 税率 = 税额", "S4": "分税率小计行 = Total 行"}
+_S4_LABEL = {"net": "不含税", "vat": "税额", "gross": "含税"}
+
+
+def explain(rec, tol=TOL):
+    """把一次读数的六条校验写成算式。行内两条给出差额最大的那一行。"""
+    c = checks(rec, tol)
+    items, rows = rec["items"], rec["rows"]
+    tn, tv, tg = rec["total_net"], rec["total_vat"], rec["total_gross"]
+    out = []
+    for n in CHECKS:
+        gap, where = c[n]["gap"], c[n]["where"]
+        calc = printed = None
+        if gap is not None:
+            if n == "L1":
+                it = items[where]
+                calc = f"第 {where + 1} 行：{fmt(it['qty'])} × {fmt(it['price'])} = {fmt(it['qty'] * it['price'])}"
+                printed = f"票面金额 {fmt(it['net'])}"
+            elif n == "L2":
+                it = items[where]
+                calc = (f"第 {where + 1} 行：{fmt(it['net'])} × (1 + {fmt(it['rate'])}%) = "
+                        f"{fmt(it['net'] * (1 + it['rate'] / 100))}")
+                printed = f"票面含税 {fmt(it['gross'])}"
+            elif n == "S1":
+                calc = f"{len(items)} 行金额之和 = {fmt(sum((it['net'] for it in items), ZERO))}"
+                printed = f"Total 行不含税 {fmt(tn)}"
+            elif n == "S2":
+                calc = f"{fmt(tn)} + {fmt(tv)} = {fmt(tn + tv)}"
+                printed = f"Total 行含税 {fmt(tg)}"
+            elif n == "S3" and rows:
+                r = rows[where]
+                calc = f"小计行 {fmt(r['net'])} × {fmt(r['rate'])}% = {fmt(r['net'] * r['rate'] / 100)}"
+                printed = f"票面税额 {fmt(r['vat'])}"
+            elif n == "S3":
+                rate = next(it["rate"] for it in items if it["rate"] is not None)
+                calc = f"{fmt(tn)} × {fmt(rate)}% = {fmt(tn * rate / 100)}"
+                printed = f"Total 行税额 {fmt(tv)}"
+            elif n == "S4":
+                label = _S4_LABEL[where]
+                total = {"net": tn, "vat": tv, "gross": tg}[where]
+                calc = f"分税率小计行{label}之和 = {fmt(gap + total)}"
+                printed = f"Total 行{label} {fmt(total)}"
+        out.append({"check": n, "name": NAMES[n], "rule": RULES[n], "calc": calc,
+                    "printed": printed, "gap": gap, "pass": c[n]["pass"],
+                    "missing": None if calc else "票面缺少这条所需的格"})
     return out

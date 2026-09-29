@@ -77,3 +77,12 @@ def parse_amount(value, thousands_hint=None):
 def q2(value):
     """量化到两位小数，便于比较。"""
     return None if value is None else value.quantize(Decimal("0.01"))
+
+
+def fmt(value, signed=False):
+    """展示用：统一写成 "1,484.95" / "11,100"，不随票面地区写法变化。"""
+    if value is None:
+        return "—"
+    q = Decimal(value).quantize(Decimal("0.01"))
+    text = f"{int(q):,}" if q == q.to_integral_value() else f"{q:,.2f}"
+    return ("+" + text) if signed and q > 0 else text
