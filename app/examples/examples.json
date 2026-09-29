@@ -43,5 +43,5 @@
    "note": "第 2 行金额 112,32 → 117,32：行内两条等式与「各行金额之和」同时不成立。"
   }
  ],
- "attribution": "CORD-v2（NAVER CLOVA，CC BY 4.0）；katanaml-org/invoices-donut-data-v1（MIT，合成发票）；港式小票为作者本人的票据。篡改图用与实验相同的方法生成。"
+ "attribution": "CORD-v2（NAVER CLOVA，CC BY 4.0）；katanaml-org/invoices-donut-data-v1（MIT，合成发票）。篡改图用与实验相同的方法生成。"
 }

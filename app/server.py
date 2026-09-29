@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -21,15 +22,21 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-APP = Path(__file__).resolve().parent
-ROOT = APP.parent
-sys.path.insert(0, str(ROOT / "src"))
+FROZEN = getattr(sys, "frozen", False)          # 由 app/build_exe.py 打包成 exe 时为真
+if FROZEN:
+    APP = Path(sys._MEIPASS) / "app"            # 页面、示例、打包时的回放记录：exe 内只读
+    ROOT = Path(sys.executable).resolve().parent  # exe 所在目录：.env 与新的回放记录放这里
+else:
+    APP = Path(__file__).resolve().parent
+    ROOT = APP.parent
+sys.path.insert(0, str(APP.parent / "src"))
 import chain  # noqa: E402  只用到提示词常量；chain 在模块顶层不依赖 langchain
 import invoice  # noqa: E402
 import receipt  # noqa: E402
 from money import fmt  # noqa: E402
 
-CACHE = Path(os.environ.get("RECEIPT_CACHE_DIR", APP / "cache"))
+CACHE = Path(os.environ.get("RECEIPT_CACHE_DIR", ROOT / "cache" if FROZEN else APP / "cache"))
+SEED = APP / "cache" if FROZEN else CACHE       # exe 里只读的回放记录；写入一律进 CACHE
 EXAMPLES = APP / "examples"
 API_URL = os.environ.get("RECEIPT_API_URL", "https://api.deepseek.com/chat/completions")
 PORT = int(os.environ.get("RECEIPT_PORT", 8765))
@@ -51,10 +58,12 @@ DOC_TYPES = {
 
 
 def api_key():
+    """环境变量优先；否则读 .env（源码运行：仓库根目录；exe：exe 所在目录或上一级，如 dist/ 的上一级）。"""
     key = os.environ.get("DEEPSEEK_API_KEY")
-    env = ROOT / ".env"
-    if not key and env.exists():
-        for line in env.read_text(encoding="utf-8").splitlines():
+    for env in [ROOT / ".env"] + ([ROOT.parent / ".env"] if FROZEN else []):
+        if key or not env.exists():
+            continue
+        for line in env.read_text(encoding="utf-8-sig").splitlines():
             if line.strip().startswith("DEEPSEEK_API_KEY="):
                 key = line.split("=", 1)[1].strip().strip('"').strip("'")
     return key or None
@@ -86,11 +95,20 @@ def cache_key(data_url, doc_type):
     return hashlib.sha256((doc_type + "|" + data_url).encode("utf-8")).hexdigest()[:20]
 
 
+def cached(key):
+    """回放记录的路径：先找新写入的，再找 exe 里打包的；都没有返回 None。"""
+    for d in (CACHE, SEED):
+        if (d / f"{key}.json").exists():
+            return d / f"{key}.json"
+    return None
+
+
 def read(data_url, doc_type, reads, mode, model_call=call_model):
     """返回 (原始读数列表, 来源说明)。mode 为 live 时调用模型并写缓存，replay 时读缓存。"""
     path = CACHE / f"{cache_key(data_url, doc_type)}.json"
     if mode == "replay":
-        if not path.exists():
+        path = cached(cache_key(data_url, doc_type))
+        if path is None:
             raise LookupError("这张图还没有真实识别过的记录，无法回放。请先用「实时识别」跑一次。")
         saved = json.loads(path.read_text(encoding="utf-8"))
         return saved["payloads"], {"source": "replay", "at": saved["at"], "model": saved["model"]}
@@ -168,8 +186,58 @@ def analyze(payloads, doc_type):
             "checks": checks, "ledger": ledger, "items": items, "labels_ok": labels_ok}
 
 
+class Presence:
+    """还有几个页面开着。每个页面打开期间一直连着 /api/alive；窗口关掉、Edge 退出时操作系统会断开
+    这条连接——不依赖页面临走前「告别」（Edge 整体退出时告别请求会被丢掉），也不受最小化时计时器降频影响。
+    exe（app/launcher.py）据此在所有窗口都关掉后退出；python app/server.py 运行时不用它。"""
+
+    GRACE = 5        # 最后一个页面断开后再等几秒：刷新页面是先断再连
+    NEVER = 120      # 启动后这么久都没有页面连上（窗口没打开）也退出
+
+    def __init__(self, now=time.time):
+        self.now, self.start = now, now()
+        self.lock, self.open, self.ever, self.last = threading.Lock(), 0, False, self.start
+
+    def connect(self):
+        with self.lock:
+            self.open += 1
+            self.ever = True
+
+    def disconnect(self):
+        with self.lock:
+            self.open -= 1
+            self.last = self.now()
+
+    def should_exit(self):
+        t = self.now()
+        with self.lock:
+            if self.open > 0:
+                return False
+            return t - self.last > self.GRACE if self.ever else t - self.start > self.NEVER
+
+
+PRESENCE = Presence()
+
+
 class Handler(BaseHTTPRequestHandler):
     model_call = staticmethod(call_model)     # 测试时替换
+
+    def _alive(self):
+        """页面开着就一直连着（EventSource）；每 2 秒写一行注释，写不出去 = 页面已关。"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        PRESENCE.connect()
+        try:
+            while True:
+                self.wfile.write(b": alive\n\n")
+                self.wfile.flush()
+                time.sleep(2)
+        except OSError:
+            pass
+        finally:
+            PRESENCE.disconnect()
 
     def log_message(self, fmt_, *args):
         sys.stderr.write("  " + (fmt_ % args) + "\n")
@@ -187,15 +255,19 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             return self._send(200, (APP / "index.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/api/alive":
+            return self._alive()
+        if path == "/favicon.ico" and (APP / "icon.ico").exists():
+            return self._send(200, (APP / "icon.ico").read_bytes(), "image/x-icon")
         if path == "/api/status":
-            n = len(list(CACHE.glob("*.json"))) if CACHE.exists() else 0
+            n = len({p.name for d in {CACHE, SEED} if d.exists() for p in d.glob("*.json")})
             return self._send(200, {"has_key": api_key() is not None, "model": chain.MODEL,
                                     "cached": n, "doc_types": {k: v["label"] for k, v in DOC_TYPES.items()}})
         if path == "/api/examples":
             manifest = json.loads((EXAMPLES / "examples.json").read_text(encoding="utf-8"))
             for ex in manifest["examples"]:
                 url = _data_url(EXAMPLES / ex["file"])
-                ex["cached"] = (CACHE / f"{cache_key(url, ex['type'])}.json").exists()
+                ex["cached"] = cached(cache_key(url, ex["type"])) is not None
             return self._send(200, manifest)
         if path.startswith("/examples/"):
             f = (EXAMPLES / path[len("/examples/"):]).resolve()
@@ -228,14 +300,30 @@ def _data_url(path):
     return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
 
 
+class Server(ThreadingHTTPServer):
+    # Windows 上 SO_REUSEADDR 允许第二个进程绑同一端口，两个服务同时在线、请求随机落到其中一个
+    allow_reuse_address = os.name != "nt"
+
+
+def make_server(port=PORT):
+    """绑定端口；已被占用（多半是已经开着一个演示）时抛 OSError。"""
+    return Server(("127.0.0.1", port), Handler)
+
+
 def main():
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    try:
+        server = make_server()
+    except OSError:
+        print(f"端口 {PORT} 已被占用：多半已经开着一个演示服务，直接打开 http://localhost:{PORT} 即可；"
+              "要重启就先关掉那个窗口。")
+        return
     key = "已找到" if api_key() else "未找到（只能回放）"
     print(f"票据核验演示：http://localhost:{PORT}    模型 {chain.MODEL}    密钥 {key}")
+    print("保持此窗口开着；按 Ctrl+C 停止服务（在终端里复制文字也会触发 Ctrl+C）")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
+        print("服务已停止（收到 Ctrl+C）")
 
 
 if __name__ == "__main__":

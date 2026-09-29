@@ -1,0 +1,297 @@
+{
+ "at": "2026-09-29 18:18:54",
+ "model": "deepseek-v4-flash-vision-exp",
+ "doc_type": "hk",
+ "payloads": [
+  {
+   "items": [
+    {
+     "label": "309455 PLASTIC BAG CHARGIN",
+     "amount": "1.00"
+    },
+    {
+     "label": "327395 COUPON",
+     "amount": "0.00"
+    },
+    {
+     "label": "044228 JADE MANGO",
+     "amount": "29.70"
+    },
+    {
+     "label": "120231 DORITOS NACHO CHEESE",
+     "amount": "31.00"
+    },
+    {
+     "label": "378845 MISO SOUR AND SPICY",
+     "amount": "29.80"
+    },
+    {
+     "label": "476744 SELECT FISH & CUTTL",
+     "amount": "31.80"
+    },
+    {
+     "label": "124605 QUAKER QUICK COOKING",
+     "amount": "19.80"
+    },
+    {
+     "label": "385883 JAX COCO 100 PURE CO",
+     "amount": "26.00"
+    },
+    {
+     "label": "089367 FARMPRESH BLACK PEPP",
+     "amount": "91.80"
+    },
+    {
+     "label": "496134 VCODE-CANNED/BOXED A",
+     "amount": "0.00"
+    },
+    {
+     "label": "112616 YAKULT PROBIOTICS DR",
+     "amount": "28.90"
+    },
+    {
+     "label": "130509 TRAPPIST HI-CAL LOW",
+     "amount": "22.90"
+    },
+    {
+     "label": "075206 ORGANIC SOYA BEAN S",
+     "amount": "15.90"
+    },
+    {
+     "label": "496133 VCODE",
+     "amount": "0.00"
+    },
+    {
+     "label": "135366 CASTLE SOFT PACK FAC",
+     "amount": "11.90"
+    },
+    {
+     "label": "099352 FRENCH BEAN (CHINA)",
+     "amount": "19.80"
+    },
+    {
+     "label": "034930 OWN RUN BAKERY BREAD",
+     "amount": "16.00"
+    },
+    {
+     "label": "417130 INDOMIE MI GORENG 5",
+     "amount": "15.90"
+    }
+   ],
+   "discounts": [
+    {
+     "label": "Buy 3 Save $9.8",
+     "amount": "9.80",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $5",
+     "amount": "6.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $3.9",
+     "amount": "5.90",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $5.3",
+     "amount": "5.80",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $2",
+     "amount": "2.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "MB APP UPGRADE -$10",
+     "amount": "10.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "App Upgrad$350-$20_C",
+     "amount": "20.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "5% OFF (CU-SCO)",
+     "amount": "16.59",
+     "above_subtotal": true
+    }
+   ],
+   "subtotal": "316.11",
+   "tax": 0,
+   "service": 0,
+   "rounding": "-0.01",
+   "total": null,
+   "payments": [
+    {
+     "label": "OCTOPUS",
+     "amount": "316.10"
+    }
+   ],
+   "change": "0.00"
+  },
+  {
+   "items": [
+    "1.00",
+    "29.70",
+    "31.00",
+    "29.80",
+    "31.80",
+    "19.80",
+    "26.00",
+    "91.80",
+    "0.00",
+    "28.90",
+    "22.90",
+    "15.90",
+    "0.00",
+    "11.90",
+    "19.80",
+    "16.00",
+    "15.90"
+   ],
+   "discounts": [
+    {
+     "label": "327395 COUPON",
+     "amount": "0.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 3 Save $3.8",
+     "amount": "9.80",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $5",
+     "amount": "6.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $3.9",
+     "amount": "5.90",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $5.3",
+     "amount": "5.80",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $2",
+     "amount": "2.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "MB APP UPGRADE -$10",
+     "amount": "10.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "App Upgrad$350-$20_C",
+     "amount": "20.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "5% OFF (CU-SCO)",
+     "amount": "16.59",
+     "above_subtotal": true
+    }
+   ],
+   "subtotal": "316.11",
+   "tax": 0,
+   "service": 0,
+   "rounding": "-0.01",
+   "total": null,
+   "payments": [
+    {
+     "label": "OCTOPUS",
+     "amount": "316.10"
+    }
+   ],
+   "change": "0.00"
+  },
+  {
+   "items": [
+    "1.00",
+    "29.70",
+    "31.00",
+    "29.80",
+    "31.80",
+    "19.80",
+    "26.00",
+    "91.80",
+    "0.00",
+    "28.90",
+    "22.90",
+    "15.90",
+    "0.00",
+    "11.90",
+    "19.80",
+    "16.00",
+    "15.90"
+   ],
+   "discounts": [
+    {
+     "label": "327395 COUPON",
+     "amount": "0.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 3 Save $9.8",
+     "amount": "9.80",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $5",
+     "amount": "5.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $3.9",
+     "amount": "5.90",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $5.3",
+     "amount": "5.80",
+     "above_subtotal": true
+    },
+    {
+     "label": "Buy 2 Save $2",
+     "amount": "2.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "MB APP UPGRADE -$10",
+     "amount": "10.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "App Upgrad$350-$20_C",
+     "amount": "20.00",
+     "above_subtotal": true
+    },
+    {
+     "label": "5% OFF (CU-SC0)",
+     "amount": "16.59",
+     "above_subtotal": true
+    }
+   ],
+   "subtotal": "316.11",
+   "tax": 0,
+   "service": 0,
+   "rounding": "-0.01",
+   "total": null,
+   "payments": [
+    {
+     "label": "OCTOPUS",
+     "amount": "316.10"
+    }
+   ],
+   "change": "0.00"
+  }
+ ]
+}

@@ -1,0 +1,106 @@
+{
+ "at": "2026-09-29 18:11:50",
+ "model": "deepseek-v4-flash-vision-exp",
+ "doc_type": "idr",
+ "payloads": [
+  {
+   "items": [
+    {
+     "label": "Soft Ori 3 Top",
+     "amount": "17,272"
+    },
+    {
+     "label": "Top Oreo",
+     "amount": "0"
+    },
+    {
+     "label": "Top Oreo",
+     "amount": "0"
+    },
+    {
+     "label": "Top Banana",
+     "amount": "0"
+    }
+   ],
+   "discounts": [],
+   "subtotal": "17,272",
+   "tax": "1,427",
+   "service": 0,
+   "rounding": 0,
+   "total": "18,999",
+   "payments": [
+    {
+     "label": "cash:",
+     "amount": "18,999"
+    }
+   ],
+   "change": 0
+  },
+  {
+   "items": [
+    {
+     "label": "1 Soft Ori 3 Top",
+     "amount": "17,272"
+    },
+    {
+     "label": "Top Oreo",
+     "amount": "0"
+    },
+    {
+     "label": "Top Oreo",
+     "amount": "0"
+    },
+    {
+     "label": "Top Banana",
+     "amount": "0"
+    }
+   ],
+   "discounts": [],
+   "subtotal": "17,272",
+   "tax": "1,427",
+   "service": 0,
+   "rounding": 0,
+   "total": "18,999",
+   "payments": [
+    {
+     "label": "cash:",
+     "amount": "18,999"
+    }
+   ],
+   "change": 0
+  },
+  {
+   "items": [
+    {
+     "label": "Soft Ori 3 Top",
+     "amount": "17,272"
+    },
+    {
+     "label": "Top Oreo",
+     "amount": "0"
+    },
+    {
+     "label": "Top Oreo",
+     "amount": "0"
+    },
+    {
+     "label": "Top Banana",
+     "amount": "0"
+    }
+   ],
+   "discounts": [],
+   "subtotal": "17,272",
+   "tax": "1,427",
+   "service": 0,
+   "rounding": 0,
+   "total": "18,999",
+   "payments": [
+    {
+     "label": "cash",
+     "amount": "18,999"
+    }
+   ],
+   "change": 0
+  }
+ ]
+}

@@ -1,9 +1,11 @@
 """离线测试：演示服务。模型调用换成假的，不发任何网络请求。"""
 import json
 import os
+import socket
 import sys
 import tempfile
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -93,7 +95,41 @@ try:
     check("示例路径不能越出 examples 目录", False)
 except urllib.error.HTTPError as e:
     check("示例路径不能越出 examples 目录", e.code == 404)
+sock = socket.create_connection(("127.0.0.1", httpd.server_address[1]))
+sock.sendall(b"GET /api/alive HTTP/1.1\r\nHost: x\r\n\r\n")
+got = b""
+while b": alive" not in got:
+    got += sock.recv(1024)
+check("/api/alive 连着时计为一个打开的页面", server.PRESENCE.open == 1 and b"text/event-stream" in got)
+sock.close()                                     # 相当于关掉窗口：连接被断开
+for _ in range(40):
+    if server.PRESENCE.open == 0:
+        break
+    time.sleep(0.25)
+check("连接断开后几秒内计为已关", server.PRESENCE.open == 0)
 httpd.shutdown()
+
+print("\nexe 何时退出（server.Presence，假时钟）")
+clock = [0.0]
+p = server.Presence(now=lambda: clock[0])
+clock[0] = 100
+check("启动后页面还没连上：不退出", not p.should_exit())
+clock[0] = 121
+check("启动 2 分钟都没有页面连上（窗口没打开）：退出", p.should_exit())
+p = server.Presence(now=lambda: clock[0])
+p.connect()
+clock[0] += 3600
+check("页面一直开着（哪怕最小化一小时）：不退出", not p.should_exit())
+p.disconnect(); p.connect()                      # 刷新：先断开再连上
+clock[0] += 60
+check("刷新页面：不退出", not p.should_exit())
+p.connect(); p.disconnect()
+check("开着两个窗口、关掉一个：不退出", not p.should_exit())
+p.disconnect()
+clock[0] += 3
+check("最后一个窗口刚关：先等 5 秒（可能是刷新）", not p.should_exit())
+clock[0] += 3
+check("最后一个窗口关掉 5 秒后：退出", p.should_exit())
 
 print(f"\n{sum(results)}/{len(results)} 通过")
 sys.exit(0 if all(results) else 1)

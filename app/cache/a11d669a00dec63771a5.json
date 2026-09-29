@@ -1,0 +1,64 @@
+{
+ "at": "2026-09-29 20:31:02",
+ "model": "deepseek-v4-flash-vision-exp",
+ "doc_type": "idr",
+ "payloads": [
+  {
+   "items": [
+    {
+     "label": "1 BUBBLE GUM",
+     "amount": "18,182"
+    }
+   ],
+   "discounts": [],
+   "subtotal": "18,182",
+   "tax": "1,818",
+   "service": 0,
+   "rounding": 0,
+   "total": "20,000",
+   "payments": [
+    {
+     "label": "CASH",
+     "amount": "20,050"
+    }
+   ],
+   "change": 0
+  },
+  {
+   "items": [
+    "18,182"
+   ],
+   "discounts": [],
+   "subtotal": "18,182",
+   "tax": "1,818",
+   "service": 0,
+   "rounding": 0,
+   "total": "20,000",
+   "payments": [
+    {
+     "label": "CASH",
+     "amount": "20.050"
+    }
+   ],
+   "change": 0
+  },
+  {
+   "items": [
+    "18.182"
+   ],
+   "discounts": [],
+   "subtotal": "18.182",
+   "tax": "1,818",
+   "service": 0,
+   "rounding": 0,
+   "total": "20,000",
+   "payments": [
+    {
+     "label": "CASH",
+     "amount": "20.050"
+    }
+   ],
+   "change": 0
+  }
+ ]
+}

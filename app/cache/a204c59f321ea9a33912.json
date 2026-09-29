@@ -1,0 +1,142 @@
+{
+ "at": "2026-09-29 19:46:01",
+ "model": "deepseek-v4-flash-vision-exp",
+ "doc_type": "invoice",
+ "payloads": [
+  {
+   "items": [
+    {
+     "qty": "5,00",
+     "net_price": "12,00",
+     "net_worth": "60,00",
+     "vat": "10%",
+     "gross_worth": "66,00"
+    },
+    {
+     "qty": "4,00",
+     "net_price": "28,08",
+     "net_worth": "117,32",
+     "vat": "10%",
+     "gross_worth": "123,55"
+    },
+    {
+     "qty": "1,00",
+     "net_price": "7,50",
+     "net_worth": "7,50",
+     "vat": "10%",
+     "gross_worth": "8,25"
+    },
+    {
+     "qty": "1,00",
+     "net_price": "12,99",
+     "net_worth": "12,99",
+     "vat": "10%",
+     "gross_worth": "14,29"
+    }
+   ],
+   "summary_rows": [
+    {
+     "vat": "10%",
+     "net_worth": "192,81",
+     "vat_amount": "19,28",
+     "gross_worth": "212,09"
+    }
+   ],
+   "total": {
+    "net_worth": "$ 192,81",
+    "vat_amount": "$ 19,28",
+    "gross_worth": "$ 212,09"
+   }
+  },
+  {
+   "items": [
+    {
+     "qty": "5,00",
+     "net_price": "12,00",
+     "net_worth": "60,00",
+     "vat": "10%",
+     "gross_worth": "66,00"
+    },
+    {
+     "qty": "4,00",
+     "net_price": "28,08",
+     "net_worth": "117,32",
+     "vat": "10%",
+     "gross_worth": "123,55"
+    },
+    {
+     "qty": "1,00",
+     "net_price": "7,50",
+     "net_worth": "7,50",
+     "vat": "10%",
+     "gross_worth": "8,25"
+    },
+    {
+     "qty": "1,00",
+     "net_price": "12,99",
+     "net_worth": "12,99",
+     "vat": "10%",
+     "gross_worth": "14,29"
+    }
+   ],
+   "summary_rows": [
+    {
+     "vat": "10%",
+     "net_worth": "192,81",
+     "vat_amount": "19,28",
+     "gross_worth": "212,09"
+    }
+   ],
+   "total": {
+    "net_worth": "$ 192,81",
+    "vat_amount": "$ 19,28",
+    "gross_worth": "$ 212,09"
+   }
+  },
+  {
+   "items": [
+    {
+     "qty": "5,00",
+     "net_price": "12,00",
+     "net_worth": "60,00",
+     "vat": "10%",
+     "gross_worth": "66,00"
+    },
+    {
+     "qty": "4,00",
+     "net_price": "28,08",
+     "net_worth": "117,32",
+     "vat": "10%",
+     "gross_worth": "123,55"
+    },
+    {
+     "qty": "1,00",
+     "net_price": "7,50",
+     "net_worth": "7,50",
+     "vat": "10%",
+     "gross_worth": "8,25"
+    },
+    {
+     "qty": "1,00",
+     "net_price": "12,99",
+     "net_worth": "12,99",
+     "vat": "10%",
+     "gross_worth": "14,29"
+    }
+   ],
+   "summary_rows": [
+    {
+     "vat": "10%",
+     "net_worth": "192,81",
+     "vat_amount": "19,28",
+     "gross_worth": "212,09"
+    }
+   ],
+   "total": {
+    "net_worth": "$ 192,81",
+    "vat_amount": "$ 19,28",
+    "gross_worth": "$ 212,09"
+   }
+  }
+ ]
+}

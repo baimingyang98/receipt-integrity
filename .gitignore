@@ -6,3 +6,5 @@ results/
 data/hk/_*.jpg
 data/hk/_*.png
 ppt/*.pptx
+build/
+dist/
